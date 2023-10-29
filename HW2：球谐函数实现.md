@@ -1,3 +1,7 @@
+![模型法线](https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/remo_t/image-20231027162044646.png)
+
+<center> 模型法线 </center>
+
 ## 预计算球谐系数
 
 ### 环境光照：计算每个像素下cubemap某个面的球谐系数
@@ -108,11 +112,13 @@ for (int l = 0; l <= SHOrder; l++){
 
 >`scene->getIntegrator()->preprocess(scene);`
 >
->计算 **unshadowed** 的情况。化简渲染方程，将常数部分的BRDF作为常数分离，将上节的球谐函数进一步计算为BRDF的球谐投影的系数
+>计算 **Diffuse Unshadowed** 的情况。化简渲染方程，将常数部分的BRDF作为常数分离，将上节的球谐函数进一步计算为BRDF的球谐投影的系数
 
+#### 分析
 
+对于漫反射传输项，可以**分为三种情况**考虑：**有阴影的**、**无阴影的**和**相互反射的**。
 
-首先我们有渲染方程
+首先考虑最简单的没有阴影的情况。我们有渲染方程
 $$
 L\left(x, \omega_o\right)=\int_S f_r\left(x, \omega_i, \omega_o\right) L_i\left(x, \omega_i\right) H\left(x, \omega_i\right) \mathrm{d} \omega_i
 $$
@@ -136,8 +142,44 @@ $$
 
 
 
+#### 代码实现
+
+计算几何项，即传输函数项 $\text{max}\left(N_x \cdot \omega_i , 0\right)$ 。
+
+```c++
+if (m_Type == Type::Unshadowed)
+{
+    // TODO: here you need to calculate unshadowed transport term of a given direction
+    // TODO: 此处你需要计算给定方向下的unshadowed传输项球谐函数值
+    double H = wi.dot(n);
+    if (H > 0.0)
+        return H;
+    return 0.0;
+}
+```
+
+
+
+
+
+
+
 
 
 
 
 <img src="/Users/remooo/Library/Application%20Support/typora-user-images/image-20231026212621778.png" alt="image-20231026212621778" style="zoom:67%;" />
+
+### 有阴影的漫反射项
+
+> `scene->getIntegrator()->preprocess(scene);`
+>
+> 计算 **Diffuse Shadowed** 的情况。这一项多了一个可见项 $V(\omega_i)$ 。
+
+
+
+
+
+
+
+![image-20231027162340813](/Users/remooo/Library/Application%20Support/typora-user-images/image-20231027162340813.png)
