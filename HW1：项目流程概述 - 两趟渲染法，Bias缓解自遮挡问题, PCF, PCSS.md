@@ -21,7 +21,7 @@
 除了作业框架要求的内容，我在coding的时候也有一些思考与疑问。
 
 1. 如何实现动态的点光源阴影效果？我们需要使用点光源阴影技术才可以实现万向阴影贴图（omnidirectional shadow maps）。
-1. `possionDiskSamples`函数并不是真正的泊松圆盘分布？
+2. `possionDiskSamples`函数并不是真正的泊松圆盘分布？
 
 ## 框架修正
 
@@ -62,11 +62,11 @@ gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 ### 变量
 
 - 在JavaScript中，我们主要使用 `var`，`let` 和 `const` 这三个关键字来声明变量/常量。
-
+  
   - `var`是声明变量的关键字，可以在**整个函数范围**内使用声明的**变量**（函数作用域）。
-
+  
   - `let`行为与 `var` 类似，也是声明了一个**变量**，但是 `let` 的**作用域限制在块中**（块作用域），比如 `for` 循环或 `if` 语句中定义的块。
-
+  
   - `const`：用于声明**常量**。 `const` 的作用域也是**块级别**的。
 
 - 推荐使用 `let` 和 `const` 而不是 `var` 来声明变量，因为它们遵循块级作用域，更符合大多数编程语言中的作用域规则，更易理解和预测。
@@ -222,9 +222,9 @@ compile(gl) {
 ```js
 // shader.js
 constructor(gl, vsSrc, fsSrc, shaderLocations) {
-	...
+    ...
     const fs = this.compileShader(fsSrc, ...);
-	...
+    ...
 }
 ```
 
@@ -264,15 +264,15 @@ const gl = canvas.getContext('webgl');
 ```
 
 > WebGL推荐参考资料：
->
+> 
 > 1. https://developer.mozilla.org/en-US/docs/Web/API/WebGL_API
 > 2. https://webglfundamentals.org
 > 3. https://www.w3cschool.cn/webgl/vjxu1jt0.html
->
+> 
 > Tips:网站都有对应的中文版本，但是有能力的还是推荐阅读英文版本～
->
+> 
 > WebGL API：
->
+> 
 > 1. https://developer.mozilla.org/en-US/docs/Web/API
 > 2. https://webglfundamentals.org/docs/
 
@@ -337,8 +337,10 @@ class Shader {
 1. 首先创建一个**创建程序**命名为WebGLProgram。
 
 2. 将编译后的顶点着色器和片段着色器`vs`和`fs`添加到程序中，这一步叫做**附加着色器**。具体而言是使用`gl.attachShader()`将他们附加到`WebGLProgram`上。
-2. 使用`gl.linkProgram()`链接`WebGLProgram`。这会生成一个可执行的程序，该程序结合了前面附加的着色器。这一步叫做**链接程序**。
-2. 最后检查链接状态，返回WebGL对象。
+
+3. 使用`gl.linkProgram()`链接`WebGLProgram`。这会生成一个可执行的程序，该程序结合了前面附加的着色器。这一步叫做**链接程序**。
+
+4. 最后检查链接状态，返回WebGL对象。
 
 ```js
 // Shader.js
@@ -356,16 +358,16 @@ linkShader(vs, fs) {
 };
 ```
 
->`WebGLProgram`可以被视为着色器的容器，它包含了将3D数据转换为屏幕上的2D像素所需的全部信息和指令。
+> `WebGLProgram`可以被视为着色器的容器，它包含了将3D数据转换为屏幕上的2D像素所需的全部信息和指令。
 
 ----
 
 得到与着色器链接的程序`glShaderProgram`后，会与`shaderLocations`对象一同被载入。
 
->简单地说`shaderLocations`对象包含了两个属性
->
->- Attributes是"个体"的数据（比如每个顶点的信息）
->- Uniforms是"整体"的数据（比如一个灯光的信息）
+> 简单地说`shaderLocations`对象包含了两个属性
+> 
+> - Attributes是"个体"的数据（比如每个顶点的信息）
+> - Uniforms是"整体"的数据（比如一个灯光的信息）
 
 框架将载入的流程打包进了`addShaderLocations()`中。简单地说，经过这一步操作之后，当你需要给这些uniform和attribute赋值时，就可以直接通过已经获取到的位置进行操作，而不需要每次都去查询位置。
 
@@ -404,7 +406,7 @@ this.shader = this.material.compile(gl);
 至此，`loadOBJ`的任务已经圆满完成。在engine.js中，这样的加载要做三次：
 
 ```js
-	// loadOBJ(renderer, path, name, objMaterial, transform, meshID);
+    // loadOBJ(renderer, path, name, objMaterial, transform, meshID);
 loadOBJ(renderer, 'assets/mary/', 'Marry', 'PhongMaterial', obj1Transform);
 loadOBJ(renderer, 'assets/mary/', 'Marry', 'PhongMaterial', obj2Transform);
 loadOBJ(renderer, 'assets/floor/', 'floor', 'PhongMaterial', floorTransform);
@@ -441,7 +443,7 @@ requestAnimationFrame(mainLoop);
 `requestAnimationFrame`的好处是它会尽量与屏幕的刷新率同步，这样可以提供更流畅的动画和更高的性能，因为它不会在屏幕刷新之间无谓地执行代码。
 
 > 关于requestAnimationFrame()函数的详细信息可以参考以下文章：
->
+> 
 > https://developer.mozilla.org/en-US/docs/Web/API/window/requestAnimationFrame
 
 接下来重点关心`render()`函数的运作。
@@ -571,7 +573,7 @@ void main(void) {
 - `vec4(1)` 与`vec(1, 1, 1, 1)`也是等价的
 
 > 参考资料：GLSL语言规范
->
+> 
 > 1. https://www.khronos.org/files/opengles_shading_language.pdf
 
 ### 矩阵存储方式
@@ -636,12 +638,12 @@ return lightMVP;
 void main(void){  
   vec3 shadingPoint = vPositionFromLight.xyz / vPositionFromLight.w;
   shadingPoint = shadingPoint*0.5+0.5;// 归一化至 [0,1]
-  
+
   float visibility = 1.0;
   visibility = useShadowMap(uShadowMap, vec4(shadingPoint, 1.0));
 
   vec3 phongColor = blinnPhong();
-  
+
   gl_FragColor=vec4(phongColor * visibility,1.0);
 }
 ```
@@ -861,6 +863,7 @@ $$
 $$
 r\prime = r^{0.75}
 $$
+
 具体代码如下：
 
 ```glsl
@@ -893,7 +896,6 @@ void poissonDiskSamples( const in vec2 randomSeed ) {
 <source src="https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/remo_t/Poisson%20Disk%20Samples.mp4" /></video>
 
 > 上面是一则视频，若您是PDF版本则需要前往网站查看。
-
 
 - **绕圈数`NUM_RINGS`**
 
@@ -934,7 +936,7 @@ float findBlocker(sampler2D shadowMap,vec2 uv,float z_shadingPoint){
   vec2 nCoords;
   for(int i=0;i<BLOCKER_SEARCH_NUM_SAMPLES;i++){
     nCoords=uv+BLOKER_SIZE*poissonDisk[i];
-    
+
     depthOnShadowMap=unpack(texture2D(shadowMap,nCoords));
     if(abs(depthOnShadowMap) < EPS)depthOnShadowMap=1.;
     // step函数用于比较两个值。
@@ -962,24 +964,24 @@ float PCSS(sampler2D shadowMap,vec4 shadingPoint){
   float avgblockerdep=findBlocker(shadowMap,shadingPoint.xy,z_shadingPoint);
   if(abs(avgblockerdep - z_shadingPoint) <= EPS) // No Blocker
     return 1.;
-  
+
   // STEP 2: penumbra size
   float dBlocker=avgblockerdep,dReceiver=z_shadingPoint-avgblockerdep;
   float wPenumbra=min(LWIDTH*dReceiver/dBlocker,MAX_PENUMBRA);
-  
+
   // STEP 3: filtering
   float _sum=0.,depthOnShadowMap,vis;
   vec2 nCoords;
   for(int i=0;i<NUM_SAMPLES;i++){
     nCoords=shadingPoint.xy+wPenumbra*poissonDisk[i];
-    
+
     depthOnShadowMap=unpack(texture2D(shadowMap,nCoords));
     if(abs(depthOnShadowMap)<1e-5)depthOnShadowMap=1.;
-    
+
     vis=step(z_shadingPoint-EPS,depthOnShadowMap);
     _sum+=vis;
   }
-  
+
   return _sum/float(NUM_SAMPLES);
 }
 ```
@@ -1079,7 +1081,6 @@ plt.title("Poisson Disk Samples")
 plt.axis('on')
 plt.gca().set_aspect('equal', adjustable='box')
 plt.show()
-
 ```
 
 ## 附录1.2 - 泊松采样点后处理动画代码
@@ -1175,7 +1176,6 @@ delay(-1000).then(function(message) {
 }).catch(function(error) {
     console.log('Error: ' + error);  // 立即输出："Error: Delay time cannot be negative!"
 });
-
 ```
 
 使用Promise的固定操作是写一个`Promise`构造函数，这个函数有两个参数（参数也是一个函数）：`resolve`和`reject`。这样可以构建错误处理的分支，比如在这个案例中，输入的内容不满足需求，则可以调用`reject`进入拒绝Promise分支。
@@ -1244,11 +1244,11 @@ console.log('End');
 
 输出将是：
 
->Start
->Before await
->End
->(wait for 2 seconds)
->After await
+> Start
+> Before await
+> End
+> (wait for 2 seconds)
+> After await
 
 希望以上解释可以帮助你理解JS的异步机制。欢迎在评论区讨论，我会尽可能立即回复您。
 
@@ -1282,14 +1282,14 @@ console.log('End');
 
 输出会是：
 
->Start
->End
->(wait for 2 seconds)
->Promise resolved
+> Start
+> End
+> (wait for 2 seconds)
+> Promise resolved
 
 ## 附录1.6 - 片段着色器:Uniforms/Textures
 
->https://webglfundamentals.org/webgl/lessons/zh_cn/webgl-fundamentals.html
+> https://webglfundamentals.org/webgl/lessons/zh_cn/webgl-fundamentals.html
 
 ### Uniforms 全局变量
 
