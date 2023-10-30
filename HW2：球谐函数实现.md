@@ -1,6 +1,6 @@
-![模型法线](https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/remo_t/image-20231027162044646.png)
+![image-20231030230515084](https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/remo_t/image-20231030230515084.png)
 
-<center> 模型法线 </center>
+<center> PRT渲染材质截图 </center>
 
 ## 预计算球谐系数
 
@@ -161,13 +161,17 @@ auto shCoeff = sh::ProjectFunction(SHOrder, shFunc, m_SampleCount);
 计算几何项，即传输函数项 $\text{max}\left(N_x \cdot \omega_i , 0\right)$ 。
 
 ```c++
+// prt.cpp
+...
+double H = wi.normalized().dot(n.normalized()) / M_PI;
 if (m_Type == Type::Unshadowed){
     // TODO: here you need to calculate unshadowed transport term of a given direction
     // TODO: 此处你需要计算给定方向下的unshadowed传输项球谐函数值
-    double H = wi.normalized().dot(n.normalized());
-    return H>0 ? H : 0.0;
+    return (H > 0.0) ? H : 0.0;
 }
 ```
+
+> 总之最后的积分结果要记得除以 $\pi$ ，再传给 `m_TransportSHCoeffs` 。
 
 ### 有阴影的漫反射项
 
@@ -177,7 +181,7 @@ if (m_Type == Type::Unshadowed){
 
 #### 分析
 
-Visibility项是一个非1即0的值，利用 `bool rayIntersect(const Ray3f &ray)` 函数，从顶点位置到采样方向反射一条射线，若击中物体，则认为被遮挡，有阴影，返回0；若射线未击中物体，则仍然返回 $max(N_{x} \cdot \omega_{i}, 0)$ 即可。
+Visibility项（$V\left(\omega_i\right)$）是一个非1即0的值，利用 `bool rayIntersect(const Ray3f &ray)` 函数，从顶点位置到采样方向反射一条射线，若击中物体，则认为被遮挡，有阴影，返回0；若射线未击中物体，则仍然返回 $max(N_{x} \cdot \omega_{i}, 0)$ 即可。
 $$
 \mathbf{L}_{D S}=\frac{\rho}{\pi} \int_S L_i\left(x, \omega_i\right) V\left(\omega_i\right) \max \left(N_x \cdot \omega_i, 0\right) d \omega_i
 $$
@@ -185,10 +189,215 @@ $$
 #### 完整代码
 
 ```c++
+// prt.cpp
+...
+double H = wi.normalized().dot(n.normalized()) / M_PI;
+...
+else{
+    // TODO: here you need to calculate shadowed transport term of a given direction
+    // TODO: 此处你需要计算给定方向下的shadowed传输项球谐函数值
+    if (H > 0.0 && !scene->rayIntersect(Ray3f(v, wi.normalized())))
+        return H;
+    return 0.0;
+}
+```
+
+> 总之最后的积分结果要记得除以 $\pi$ ，再传给 `m_TransportSHCoeffs` 。
+
+### 导出计算结果
+
+添加运行参数：
+
+```tex
+./scenes/prt.xml
+```
+
+在 prt.xml 中，需要做以下**修改**，就可以选择渲染的环境光cubemap。另外，模型、相机参数等也可自行修改。
+
+```xml
+// prt.xml
+
+<!-- Render the visible surface normals -->
+<integrator type="prt">
+    <string name="type" value="unshadowed" />
+    <integer name="bounce" value="1" />
+    <integer name="PRTSampleCount" value="100" />
+<!--		<string name="cubemap" value="cubemap/GraceCathedral" />-->
+<!--		<string name="cubemap" value="cubemap/Indoor" />-->
+<!--		<string name="cubemap" value="cubemap/Skybox" />-->
+    <string name="cubemap" value="cubemap/CornellBox" />
+
+</integrator>
+```
+
+其中，标签可选值：
+
+- `type`：unshadowed、shadowed、 interreflection
+- `bounce`：interreflection类型下的光线弹射次数（目前尚未实现）
+- `PRTSampleCount`：传输项每个顶点的采样数
+- `cubemap`：cubemap/GraceCathedral、cubemap/Indoor、cubemap/Skybox、cubemap/CornellBox
+
+![image-20231030230515084](https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/remo_t/image-20231030230515084.png)
+
+上图分别是GraceCathedral、Indoor、Skybox和CornellBox的 `unshadowed` 渲染结果，采样数是1。
+
+### 应用到实时渲染框架
+
+上一节计算完成后，将对应cubemap路径中的`light.txt`和`transport.txt`拷贝到实时渲染框架的cubemap文件夹中。
+
+#### 预计算数据解析
+
+**取消** `engine.js` 中88-114行的注释，这一段代码用于解析刚才添加进来的txt文件。
+
+```js
+// engine.js
+// file parsing
+... // 把这块代码取消注释
+```
+
+#### 导入模型/创建并使用PRT材质Shader
+
+在materials文件夹下**建立**文件 `PRTMaterial.js` 。
+
+```js
+//PRTMaterial.js
+
+class PRTMaterial extends Material {
+    constructor(vertexShader, fragmentShader) {
+        super({
+            'uPrecomputeL[0]': { type: 'precomputeL', value: null},
+            'uPrecomputeL[1]': { type: 'precomputeL', value: null},
+            'uPrecomputeL[2]': { type: 'precomputeL', value: null},
+        }, 
+        ['aPrecomputeLT'], 
+        vertexShader, fragmentShader, null);
+    }
+}
+
+async function buildPRTMaterial(vertexPath, fragmentPath) {
+    let vertexShader = await getShaderString(vertexPath);
+    let fragmentShader = await getShaderString(fragmentPath);
+
+    return new PRTMaterial(vertexShader, fragmentShader);
+}
+```
+
+然后在 `index.html` 里引入。
+
+```html
+// index.html
+<script src="src/materials/Material.js" defer></script>
+<script src="src/materials/ShadowMaterial.js" defer></script>
+<script src="src/materials/PhongMaterial.js" defer></script>
+<!-- Edit Start --><script src="src/materials/PRTMaterial.js" defer></script><!-- Edit End -->
+<script src="src/materials/SkyBoxMaterial.js" defer></script>
+```
+
+在 `loadOBJ.js` 加载新的材质。
+
+```js
+// loadOBJ.js
+
+switch (objMaterial) {
+	case 'PhongMaterial':
+		material = buildPhongMaterial(colorMap, mat.specular.toArray(), light, Translation, Scale, "./src/shaders/phongShader/phongVertex.glsl", "./src/shaders/phongShader/phongFragment.glsl");
+		shadowMaterial = buildShadowMaterial(light, Translation, Scale, "./src/shaders/shadowShader/shadowVertex.glsl", "./src/shaders/shadowShader/shadowFragment.glsl");
+		break;
+	// TODO: Add your PRTmaterial here
+	//Edit Start
+	case 'PRTMaterial':
+		material = buildPRTMaterial("./src/shaders/prtShader/prtVertex.glsl", "./src/shaders/prtShader/prtFragment.glsl");
+		break;
+	//Edit End
+	// ...
+}
+```
+
+给场景添加mary模型，设置位置与大小，并且使用刚建立的材质。
+
+```js
+//engine.js
+
+// Add shapes
+...
+// Edit Start
+let maryTransform = setTransform(0, -35, 0, 20, 20, 20);
+// Edit End
+...
+// TODO: load model - Add your Material here
+...
+// Edit Start
+loadOBJ(renderer, 'assets/mary/', 'mary', 'PRTMaterial', maryTransform);
+// Edit End
+```
+
+在渲染循环中给材质设置precomputeL实时的值。
+
+```js
+//WebGLRenderer.js
+
+if (k == 'uMoveWithCamera') { // The rotation of the skybox
+    gl.uniformMatrix4fv(
+        this.meshes[i].shader.program.uniforms[k],
+        false,
+        cameraModelMatrix);
+}
+
+// Bonus - Fast Spherical Harmonic Rotation
+//let precomputeL_RGBMat3 = getRotationPrecomputeL(precomputeL[guiParams.envmapId], cameraModelMatrix);
+
+// Edit Start
+let Mat3Value = getMat3ValueFromRGB(precomputeL[guiParams.envmapId])
+for(let j = 0; j < 3; j++){
+    if (k == 'uPrecomputeL['+j+']') {
+        gl.uniformMatrix3fv(
+            this.meshes[i].shader.program.uniforms[k],
+            false,
+            Mat3Value[j]);
+    }
+}
+// Edit End
 ```
 
 
 
 
 
-![image-20231027162340813](/Users/remooo/Library/Application%20Support/typora-user-images/image-20231027162340813.png)
+#### 添加CornellBox场景
+
+默认框架代码中没有CornellBox，我们自行添加：
+
+```js
+// engine.js
+
+var envmap = [
+	'assets/cubemap/GraceCathedral',
+	'assets/cubemap/Indoor',
+	'assets/cubemap/Skybox',
+	// Edit Start
+	'assets/cubemap/CornellBox',
+	// Edit End
+];
+```
+
+```js
+//engine.js
+
+function createGUI() {
+	const gui = new dat.gui.GUI();
+	const panelModel = gui.addFolder('Switch Environemtn Map');
+	// Edit Start
+	panelModel.add(guiParams, 'envmapId', { 'GraceGathedral': 0, 'Indoor': 1, 'Skybox': 2, 'CornellBox': 3}).name('Envmap Name');
+	// Edit End
+	panelModel.open();
+}
+```
+
+####
+
+
+
+<img src="https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/remo_t/image-20231027162044646.png" alt="模型法线" style="zoom:50%;" />
+
+<center> 模型法线 </center>
+
