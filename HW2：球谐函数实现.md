@@ -6,9 +6,31 @@
 
 ### 环境光照：计算每个像素下cubemap某个面的球谐系数
 
->`ProjEnv::PrecomputeCubemapSH<SHOrder>(images, width, height, channel);`
->
->使用黎曼积分的方法计算环境光球谐函数的系数。
+> `ProjEnv::PrecomputeCubemapSH<SHOrder>(images, width, height, channel);`
+> 
+> 使用黎曼积分的方法计算环境光球谐函数的系数。
+
+#### 完整代码
+
+```c++
+// TODO: here you need to compute light sh of each face of cubemap of each pixel
+// TODO: 此处你需要计算每个像素下cubemap某个面的球谐系数
+Eigen::Vector3f dir = cubemapDirs[i * width * height + y * width + x];
+int index = (y * width + x) * channel;
+Eigen::Array3f Le(images[i][index + 0], images[i][index + 1],
+                  images[i][index + 2]);
+// 描述在球面坐标上当前的角度
+double theta = acos(dir.z());
+double phi = atan2(dir.y(), dir.x());
+// 遍历球谐函数的各个基函数
+for (int l = 0; l <= SHOrder; l++){
+    for (int m = -l; m <= l; m++){
+        float sh = sh::EvalSH(l, m, phi, theta);
+        float delta = CalcArea((float)x, (float)y, width, height);
+        SHCoeffiecents[l*(l+1)+m] += Le * sh * delta;
+    }
+}
+```
 
 #### 分析
 
@@ -33,11 +55,13 @@ Eigen::Array3f Le(images[i][index + 0], images[i][index + 1],
 $$
 Y_{lm} = \int_{\phi=0}^{2\pi} \int_{\theta=0}^{\pi} f(\theta, \phi) Y_l^m (\theta, \phi) \sin(\theta) d\theta d\phi\\
 $$
+
 其中：
--  $\theta$  是天顶角，范围从 $0$ 到 $ \pi $； $\phi$  是方位角，范围从  $0$  到  $2pi$ 。
--  $f\left(\theta, \phi\right)$ 是球面上某点的函数值。
--  $Y_l^m$  是球谐函数，它由相应的勒让德多项式  $P_l^m$  和一些三角函数组成。
--  $l$  是球谐函数的阶数； $m$  是球谐函数的序数，范围从  $-l$  到  $l$ 。
+
+- $\theta$  是天顶角，范围从 $0$ 到 $ \pi $； $\phi$  是方位角，范围从  $0$  到  $2pi$ 。
+- $f\left(\theta, \phi\right)$ 是球面上某点的函数值。
+- $Y_l^m$  是球谐函数，它由相应的勒让德多项式  $P_l^m$  和一些三角函数组成。
+- $l$  是球谐函数的阶数； $m$  是球谐函数的序数，范围从  $-l$  到  $l$ 。
 
 为了更加具体的让读者理解，这里写出代码中球谐函数离散形式的估计，即黎曼积分的方法来计算。
 $$
@@ -45,14 +69,13 @@ Y_{l m}=\sum_{i=1}^N f\left(\theta_i, \phi_i\right) Y_l^m\left(\theta_i, \phi_i\
 $$
 
 其中：
+
 - $f\left(\theta_i, \phi_i\right)$ 是球面上某点的函数值。
 - $Y_l^m\left(\theta_i, \phi_i\right)$ 是球谐函数在该点的值。
 - $\Delta \omega_i$ 是该点在球面上的微小区域或权重。
 - $N$ 是所有离散点的总数。
 
-#### 代码实现
-
-
+#### 代码细节
 
 - **从 cubemap 获取RGB光照信息**
 
@@ -84,44 +107,22 @@ for (int l = 0; l <= SHOrder; l++){
 }
 ```
 
-完整代码：
-
-```c++
-// TODO: here you need to compute light sh of each face of cubemap of each pixel
-// TODO: 此处你需要计算每个像素下cubemap某个面的球谐系数
-Eigen::Vector3f dir = cubemapDirs[i * width * height + y * width + x];
-int index = (y * width + x) * channel;
-Eigen::Array3f Le(images[i][index + 0], images[i][index + 1],
-                  images[i][index + 2]);
-// 描述在球面坐标上当前的角度
-double theta = acos(dir.z());
-double phi = atan2(dir.y(), dir.x());
-// 遍历球谐函数的各个基函数
-for (int l = 0; l <= SHOrder; l++){
-    for (int m = -l; m <= l; m++){
-        float sh = sh::EvalSH(l, m, phi, theta);
-        float delta = CalcArea((float)x, (float)y, width, height);
-        SHCoeffiecents[l*(l+1)+m] += Le * sh * delta;
-    }
-}
-```
-
-
-
 ### 无阴影的漫反射项
 
->`scene->getIntegrator()->preprocess(scene);`
->
->计算 **Diffuse Unshadowed** 的情况。化简渲染方程，将常数部分的BRDF作为常数分离，将上节的球谐函数进一步计算为BRDF的球谐投影的系数
+> `scene->getIntegrator()->preprocess(scene);`
+> 
+> 计算 **Diffuse Unshadowed** 的情况。化简渲染方程，将上节的球谐函数代入进一步计算为BRDF的球谐投影的系数。其中关键的函数是`ProjectFunction`。我们要为这个函数编写一个lambda表达式，用于计算传输函数项 $\text{max}\left(N_x \cdot \omega_i , 0\right)$ 。
 
 #### 分析
 
 对于漫反射传输项，可以**分为三种情况**考虑：**有阴影的**、**无阴影的**和**相互反射的**。
 
 首先考虑最简单的没有阴影的情况。我们有渲染方程
+
 $$
 L\left(x, \omega_o\right)=\int_S f_r\left(x, \omega_i, \omega_o\right) L_i\left(x, \omega_i\right) H\left(x, \omega_i\right) \mathrm{d} \omega_i
 $$
+
 其中，
 
 - $L_i$ 是入射辐射度。
@@ -133,6 +134,7 @@ $$
 L_{D U}=\frac{\rho}{\pi} \int_S L_i\left(x, \omega_i\right) \max \left(N_x \cdot \omega_i, 0\right) \mathrm{d} \omega_i
 $$
 其中：
+
 - $L_{D U}(x)$ 是点 $x$ 的漫反射出射辐射度。
 - $N_x$ 是表面法线。
 
@@ -140,43 +142,50 @@ $$
 
 具体到运用球谐函数近似是，我们分别对这两项展开。前者的输入是光的入射方向，后者输入的是反射（或者出射方向），并且展开是两个系列的数组，因此我们使用名为查找表（Look-Up Table，简称LUT）的数据结构。
 
+```c++
+auto shCoeff = sh::ProjectFunction(SHOrder, shFunc, m_SampleCount);
+```
 
+其中，最重要的是上面这个函数`ProjectFunction`。我们要为这个函数编写一个Lambda表达式（`shFunc`）作为传参，表达式用于计算传输函数项 $\text{max}\left(N_x \cdot \omega_i , 0\right)$ 。
 
-#### 代码实现
+`ProjectFunction` 函数传参：
+
+- 球谐阶数
+- 需要投影在基函数上的函数（我们需要编写的）
+- 采样数
+
+该函数会取Lambda函数返回的结果投影在基函数上得到系数，最后把各个样本系数累加并乘以权重，最后得出该顶点的最终系数。
+
+#### 完整代码
 
 计算几何项，即传输函数项 $\text{max}\left(N_x \cdot \omega_i , 0\right)$ 。
 
 ```c++
-if (m_Type == Type::Unshadowed)
-{
+if (m_Type == Type::Unshadowed){
     // TODO: here you need to calculate unshadowed transport term of a given direction
     // TODO: 此处你需要计算给定方向下的unshadowed传输项球谐函数值
-    double H = wi.dot(n);
-    if (H > 0.0)
-        return H;
-    return 0.0;
+    double H = wi.normalized().dot(n.normalized());
+    return H>0 ? H : 0.0;
 }
 ```
-
-
-
-
-
-
-
-
-
-
-
-<img src="/Users/remooo/Library/Application%20Support/typora-user-images/image-20231026212621778.png" alt="image-20231026212621778" style="zoom:67%;" />
 
 ### 有阴影的漫反射项
 
 > `scene->getIntegrator()->preprocess(scene);`
->
+> 
 > 计算 **Diffuse Shadowed** 的情况。这一项多了一个可见项 $V(\omega_i)$ 。
 
+#### 分析
 
+Visibility项是一个非1即0的值，利用 `bool rayIntersect(const Ray3f &ray)` 函数，从顶点位置到采样方向反射一条射线，若击中物体，则认为被遮挡，有阴影，返回0；若射线未击中物体，则仍然返回 $max(N_{x} \cdot \omega_{i}, 0)$ 即可。
+$$
+\mathbf{L}_{D S}=\frac{\rho}{\pi} \int_S L_i\left(x, \omega_i\right) V\left(\omega_i\right) \max \left(N_x \cdot \omega_i, 0\right) d \omega_i
+$$
+
+#### 完整代码
+
+```c++
+```
 
 
 
