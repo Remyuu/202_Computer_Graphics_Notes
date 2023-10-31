@@ -491,7 +491,7 @@ for (let i = 0; i < this.meshes.length; i++) {
 
 上文我们讨论了如何载入GLSL，这一章节介绍GLSL的概念与实际用法。
 
-在WebGL中进行渲染时，我们需要至少一个**顶点着色器（Vertex Shader）**和一个**片段着色器（Fragment Shader）**才能绘制出一幅画面。上一节我们以片段着色器为例，介绍了框架是怎么将GLSL文件从硬盘读取进renderer的。接下来我们也以Flagment Shader片段着色器为例子（即phongFragment.glsl），介绍编写GLSL的流程。
+在WebGL中进行渲染时，我们需要至少一个 **顶点着色器（Vertex Shader）** 和一个 **片段着色器（Fragment Shader）** 才能绘制出一幅画面。上一节我们以片段着色器为例，介绍了框架是怎么将GLSL文件从硬盘读取进renderer的。接下来我们也以Flagment Shader片段着色器为例子（即phongFragment.glsl），介绍编写GLSL的流程。
 
 ### FragmentShader.glsl有什么用？
 
@@ -579,6 +579,7 @@ void main(void) {
 ### 矩阵存储方式
 
 这些提示都可以在glmatrix的Doc中找到：https://glmatrix.net/docs/mat4.js.html。另外，如果看得仔细我们会发现这个组件也都是用**列优先存储**矩阵的，WebGL和GLSL中也是列有限存储。如下所示：
+
 $$
 \left( \begin{array}{llll}
 0 & 4 & 8 & 12 \\
@@ -588,6 +589,7 @@ $$
 \end{array}
 \right)
 $$
+
 将一个物体移动到一个新的位置，可以用`mat4.translate()`函数，并且这个函数接受三个参数分别是：一个4x4的输出out，传入的4x4矩阵a，一个1x3的位移矩阵v。
 
 最简单的矩阵乘法可以使用`mat4.multiply`，缩放矩阵使用`mat4.scale()`，调整“看向”的方向使用`mat4.lookAt()`，正交投影矩阵`mat4.ortho()`。
