@@ -12,7 +12,7 @@
 
 #### 完整代码
 
-```c++
+```cpp
 // TODO: here you need to compute light sh of each face of cubemap of each pixel
 // TODO: 此处你需要计算每个像素下cubemap某个面的球谐系数
 Eigen::Vector3f dir = cubemapDirs[i * width * height + y * width + x];
@@ -64,6 +64,7 @@ $$
 - $l$  是球谐函数的阶数； $m$  是球谐函数的序数，范围从  $-l$  到  $l$ 。
 
 为了更加具体的让读者理解，这里写出代码中球谐函数离散形式的估计，即黎曼积分的方法来计算。
+
 $$
 Y_{l m}=\sum_{i=1}^N f\left(\theta_i, \phi_i\right) Y_l^m\left(\theta_i, \phi_i\right) \Delta \omega_i
 $$
@@ -79,7 +80,7 @@ $$
 
 - **从 cubemap 获取RGB光照信息**
 
-```c++
+```cpp
 Eigen::Array3f Le(images[i][index + 0], images[i][index + 1],
                   images[i][index + 2]);
 ```
@@ -88,7 +89,7 @@ Eigen::Array3f Le(images[i][index + 0], images[i][index + 1],
 
 - **将方向向量转换为球面坐标**
 
-```c++
+```cpp
 double theta = acos(dir.z());
 double phi = atan2(dir.y(), dir.x());
 ```
@@ -97,7 +98,7 @@ double phi = atan2(dir.y(), dir.x());
 
 - **遍历球谐函数的各个基函数**
 
-```c++
+```cpp
 for (int l = 0; l <= SHOrder; l++){
     for (int m = -l; m <= l; m++){
         float sh = sh::EvalSH(l, m, phi, theta);
@@ -130,9 +131,11 @@ $$
 - $\omega_i$ 是入射光方向。
 
 对于表面处处相等的漫反射表面，我们可以简化得到 **Unshadowed** 光照方程
+
 $$
 L_{D U}=\frac{\rho}{\pi} \int_S L_i\left(x, \omega_i\right) \max \left(N_x \cdot \omega_i, 0\right) \mathrm{d} \omega_i
 $$
+
 其中：
 
 - $L_{D U}(x)$ 是点 $x$ 的漫反射出射辐射度。
@@ -146,7 +149,7 @@ $$
 auto shCoeff = sh::ProjectFunction(SHOrder, shFunc, m_SampleCount);
 ```
 
-其中，最重要的是上面这个函数`ProjectFunction`。我们要为这个函数编写一个Lambda表达式（`shFunc`）作为传参，表达式用于计算传输函数项 $\text{max}\left(N_x \cdot \omega_i , 0\right)$ 。
+其中，最重要的是上面这个函数 `ProjectFunction` 。我们要为这个函数编写一个Lambda表达式（`shFunc`）作为传参，表达式用于计算传输函数项 $\text{max}\left(N_x \cdot \omega_i , 0\right)$ 。
 
 `ProjectFunction` 函数传参：
 
@@ -160,7 +163,7 @@ auto shCoeff = sh::ProjectFunction(SHOrder, shFunc, m_SampleCount);
 
 计算几何项，即传输函数项 $\text{max}\left(N_x \cdot \omega_i , 0\right)$ 。
 
-```c++
+```cpp
 // prt.cpp
 ...
 double H = wi.normalized().dot(n.normalized()) / M_PI;
@@ -182,13 +185,14 @@ if (m_Type == Type::Unshadowed){
 #### 分析
 
 Visibility项（$V\left(\omega_i\right)$）是一个非1即0的值，利用 `bool rayIntersect(const Ray3f &ray)` 函数，从顶点位置到采样方向反射一条射线，若击中物体，则认为被遮挡，有阴影，返回0；若射线未击中物体，则仍然返回 $max(N_{x} \cdot \omega_{i}, 0)$ 即可。
+
 $$
 \mathbf{L}_{D S}=\frac{\rho}{\pi} \int_S L_i\left(x, \omega_i\right) V\left(\omega_i\right) \max \left(N_x \cdot \omega_i, 0\right) d \omega_i
 $$
 
 #### 完整代码
 
-```c++
+```cpp
 // prt.cpp
 ...
 double H = wi.normalized().dot(n.normalized()) / M_PI;
@@ -206,6 +210,8 @@ else{
 
 ### 导出计算结果
 
+> nori框架会生成的两个预计算结果的文件。
+
 添加运行参数：
 
 ```tex
@@ -222,9 +228,9 @@ else{
     <string name="type" value="unshadowed" />
     <integer name="bounce" value="1" />
     <integer name="PRTSampleCount" value="100" />
-<!--		<string name="cubemap" value="cubemap/GraceCathedral" />-->
-<!--		<string name="cubemap" value="cubemap/Indoor" />-->
-<!--		<string name="cubemap" value="cubemap/Skybox" />-->
+<!--        <string name="cubemap" value="cubemap/GraceCathedral" />-->
+<!--        <string name="cubemap" value="cubemap/Indoor" />-->
+<!--        <string name="cubemap" value="cubemap/Skybox" />-->
     <string name="cubemap" value="cubemap/CornellBox" />
 
 </integrator>
@@ -243,7 +249,9 @@ else{
 
 ### 应用到实时渲染框架
 
-上一节计算完成后，将对应cubemap路径中的`light.txt`和`transport.txt`拷贝到实时渲染框架的cubemap文件夹中。
+> 将nori生成的文件手动拖到实时渲染框架中，并且对实时框架做一些改动。
+
+上一节计算完成后，将对应cubemap路径中的 `light.txt` 和 `transport.txt` 拷贝到实时渲染框架的cubemap文件夹中。
 
 #### 预计算数据解析
 
@@ -299,17 +307,17 @@ async function buildPRTMaterial(vertexPath, fragmentPath) {
 // loadOBJ.js
 
 switch (objMaterial) {
-	case 'PhongMaterial':
-		material = buildPhongMaterial(colorMap, mat.specular.toArray(), light, Translation, Scale, "./src/shaders/phongShader/phongVertex.glsl", "./src/shaders/phongShader/phongFragment.glsl");
-		shadowMaterial = buildShadowMaterial(light, Translation, Scale, "./src/shaders/shadowShader/shadowVertex.glsl", "./src/shaders/shadowShader/shadowFragment.glsl");
-		break;
-	// TODO: Add your PRTmaterial here
-	//Edit Start
-	case 'PRTMaterial':
-		material = buildPRTMaterial("./src/shaders/prtShader/prtVertex.glsl", "./src/shaders/prtShader/prtFragment.glsl");
-		break;
-	//Edit End
-	// ...
+    case 'PhongMaterial':
+        material = buildPhongMaterial(colorMap, mat.specular.toArray(), light, Translation, Scale, "./src/shaders/phongShader/phongVertex.glsl", "./src/shaders/phongShader/phongFragment.glsl");
+        shadowMaterial = buildShadowMaterial(light, Translation, Scale, "./src/shaders/shadowShader/shadowVertex.glsl", "./src/shaders/shadowShader/shadowFragment.glsl");
+        break;
+    // TODO: Add your PRTmaterial here
+    //Edit Start
+    case 'PRTMaterial':
+        material = buildPRTMaterial("./src/shaders/prtShader/prtVertex.glsl", "./src/shaders/prtShader/prtFragment.glsl");
+        break;
+    //Edit End
+    // ...
 }
 ```
 
@@ -331,10 +339,14 @@ loadOBJ(renderer, 'assets/mary/', 'mary', 'PRTMaterial', maryTransform);
 // Edit End
 ```
 
-在渲染循环中给材质设置precomputeL实时的值。
+在渲染循环的camera pass中给材质设置precomputeL实时的值，也就是传递预先计算的数据给shader。下面代码是每一帧中每一趟camera pass中每一个网格mesh的每一个uniforms的遍历。实时渲染框架已经解析了预计算的数据并且存储到了uniforms中。`precomputeL`是一个 9x3 的矩阵，代表这里分别有RGB三个通道的前三阶（9个）球谐函数（实际上我们会说这是一个 3x3 的矩阵，但是我们写代码直接写成一个长度为9的数组）。为了方便使用，通过 `tool.js` 的函数将 `precomputeL` 转换为 3x9 的矩阵。
+
+通过 `uniformMatrix3fv` 函数，我们可以将材质里存储的信息上传到GPU上。这个函数接受三个参数，具体请查阅 [WebGL文档 - uniformMatrix](https://developer.mozilla.org/en-US/docs/Web/API/WebGLRenderingContext/uniformMatrix) 。其中第一个参数的作用是在我们自己创建的 `PRTMaterial` 中，`uniforms` 包含了 `uPrecomputeL[0]` , `uPrecomputeL[1]` 和 `uPrecomputeL[2]` 。在GPU内的工作不需要我们关注，我们只需要有在CPU上的 uniform ，就可以通过API自动访问到GPU上对应的内容。换句话说，当获取一个 uniform 或属性的位置，实际上得到的是一个在CPU端的引用，但在底层，这个引用会映射到GPU上的一个具体位置。而链接 uniform 的步骤在 `Shader.js` 的 `this.program = this.addShaderLocations（）` 中完成（看看代码就能懂了，只是比较绕，在我的HW1文章中也有分析过）， `shader.program` 有三个属性分别是：`glShaderProgram`, `uniforms`, 和 `attribs`。而具体声明的位置则是在 `XXXshader.glsl` 中，在下一步中我们就会完成它。
+
+总结一下，下面这段代码主要工作就是为片段着色器提供预先处理过的数据。
 
 ```js
-//WebGLRenderer.js
+// WebGLRenderer.js
 
 if (k == 'uMoveWithCamera') { // The rotation of the skybox
     gl.uniformMatrix4fv(
@@ -347,21 +359,61 @@ if (k == 'uMoveWithCamera') { // The rotation of the skybox
 //let precomputeL_RGBMat3 = getRotationPrecomputeL(precomputeL[guiParams.envmapId], cameraModelMatrix);
 
 // Edit Start
-let Mat3Value = getMat3ValueFromRGB(precomputeL[guiParams.envmapId])
-for(let j = 0; j < 3; j++){
-    if (k == 'uPrecomputeL['+j+']') {
+let Mat3Value = getMat3ValueFromRGB(precomputeL[guiParams.envmapId]);
+
+if (/^uPrecomputeL\[\d\]$/.test(k)) {
+    let index = parseInt(k.split('[')[1].split(']')[0]);
+    if (index >= 0 && index < 3) {
         gl.uniformMatrix3fv(
             this.meshes[i].shader.program.uniforms[k],
             false,
-            Mat3Value[j]);
+            Mat3Value[index]
+        );
     }
 }
 // Edit End
 ```
 
+> 也可以将 `Mat3Value` 的计算放在i循环的外面，减少计算次数。
 
+明白了上面代码的作用之后，接下来的任务就非常明了了。上一步我们将每一个球谐系数都传到了 GPU 的 `uPrecomputeL[]` 中，接下来在GPU上编程计算球谐系数和传输矩阵的点乘，也就是下图 light_coefficient * transport_matrix。
 
+实时渲染框架中已经完成了Light_Transport到对应方向的矩阵的化简，我们只需要分别对三个颜色通道的长度为9的向量做点乘就行了。值得一提的是，`PrecomputeL` 和 `PrecomputeLT` 既可以传给顶点着色器也可以传给片段着色器，若传给顶点着色器，就只需要在片段着色器中差值得到颜色，速度更快，但是真实性就稍差一些。怎么计算取决于不同的需求。
 
+<img title="" src="https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/remo_t/image-20231016142641895.png" alt="image-20231016142641895" width="357" data-align="center">
+
+```glsl
+//prtVertex.glsl
+
+attribute vec3 aVertexPosition;
+attribute vec3 aNormalPosition;
+attribute mat3 aPrecomputeLT;  // Precomputed Light Transfer matrix for the vertex
+
+uniform mat4 uModelMatrix;
+uniform mat4 uViewMatrix;
+uniform mat4 uProjectionMatrix;
+uniform mat3 uPrecomputeL[3];  // Precomputed Lighting matrices
+varying highp vec3 vNormal;
+
+varying highp vec3 vColor;     // Outgoing color after the dot product calculations
+
+float L_dot_LT(const mat3 PrecomputeL, const mat3 PrecomputeLT) {
+  return dot(PrecomputeL[0], PrecomputeLT[0]) 
+        + dot(PrecomputeL[1], PrecomputeLT[1]) 
+        + dot(PrecomputeL[2], PrecomputeLT[2]);
+}
+
+void main(void) {
+  // 防止因为浏览器优化报错，无实际作用
+  aNormalPosition;
+
+  for(int i = 0; i < 3; i++) {
+      vColor[i] = L_dot_LT(aPrecomputeLT, uPrecomputeL[i]);
+  }
+
+  gl_Position = uProjectionMatrix * uViewMatrix * uModelMatrix * vec4(aVertexPosition, 1.0);
+}
+```
 
 #### 添加CornellBox场景
 
@@ -371,12 +423,12 @@ for(let j = 0; j < 3; j++){
 // engine.js
 
 var envmap = [
-	'assets/cubemap/GraceCathedral',
-	'assets/cubemap/Indoor',
-	'assets/cubemap/Skybox',
-	// Edit Start
-	'assets/cubemap/CornellBox',
-	// Edit End
+    'assets/cubemap/GraceCathedral',
+    'assets/cubemap/Indoor',
+    'assets/cubemap/Skybox',
+    // Edit Start
+    'assets/cubemap/CornellBox',
+    // Edit End
 ];
 ```
 
@@ -384,20 +436,17 @@ var envmap = [
 //engine.js
 
 function createGUI() {
-	const gui = new dat.gui.GUI();
-	const panelModel = gui.addFolder('Switch Environemtn Map');
-	// Edit Start
-	panelModel.add(guiParams, 'envmapId', { 'GraceGathedral': 0, 'Indoor': 1, 'Skybox': 2, 'CornellBox': 3}).name('Envmap Name');
-	// Edit End
-	panelModel.open();
+    const gui = new dat.gui.GUI();
+    const panelModel = gui.addFolder('Switch Environemtn Map');
+    // Edit Start
+    panelModel.add(guiParams, 'envmapId', { 'GraceGathedral': 0, 'Indoor': 1, 'Skybox': 2, 'CornellBox': 3}).name('Envmap Name');
+    // Edit End
+    panelModel.open();
 }
 ```
 
-####
+#### 
 
-
-
-<img src="https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/remo_t/image-20231027162044646.png" alt="模型法线" style="zoom:50%;" />
+<img title="" src="https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/remo_t/image-20231027162044646.png" alt="模型法线" style="zoom:50%;" width="529" data-align="center">
 
 <center> 模型法线 </center>
-
