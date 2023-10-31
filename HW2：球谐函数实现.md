@@ -4,6 +4,8 @@
 
 ## 预计算球谐系数
 
+> 利用框架nori预先计算球谐函数系数。
+
 ### 环境光照：计算每个像素下cubemap某个面的球谐系数
 
 > `ProjEnv::PrecomputeCubemapSH<SHOrder>(images, width, height, channel);`
@@ -247,13 +249,13 @@ else{
 
 上图分别是GraceCathedral、Indoor、Skybox和CornellBox的 `unshadowed` 渲染结果，采样数是1。
 
-### 应用到实时渲染框架
+## 使用球谐系数着色
 
 > 将nori生成的文件手动拖到实时渲染框架中，并且对实时框架做一些改动。
 
-上一节计算完成后，将对应cubemap路径中的 `light.txt` 和 `transport.txt` 拷贝到实时渲染框架的cubemap文件夹中。
+上一章计算完成后，将对应cubemap路径中的 `light.txt` 和 `transport.txt` 拷贝到实时渲染框架的cubemap文件夹中。
 
-#### 预计算数据解析
+### 预计算数据解析
 
 **取消** `engine.js` 中88-114行的注释，这一段代码用于解析刚才添加进来的txt文件。
 
@@ -263,7 +265,7 @@ else{
 ... // 把这块代码取消注释
 ```
 
-#### 导入模型/创建并使用PRT材质Shader
+### 导入模型/创建并使用PRT材质Shader
 
 在materials文件夹下**建立**文件 `PRTMaterial.js` 。
 
@@ -339,6 +341,10 @@ loadOBJ(renderer, 'assets/mary/', 'mary', 'PRTMaterial', maryTransform);
 // Edit End
 ```
 
+### 计算着色
+
+> 将预计算数据载入GPU中。
+
 在渲染循环的camera pass中给材质设置precomputeL实时的值，也就是传递预先计算的数据给shader。下面代码是每一帧中每一趟camera pass中每一个网格mesh的每一个uniforms的遍历。实时渲染框架已经解析了预计算的数据并且存储到了uniforms中。`precomputeL`是一个 9x3 的矩阵，代表这里分别有RGB三个通道的前三阶（9个）球谐函数（实际上我们会说这是一个 3x3 的矩阵，但是我们写代码直接写成一个长度为9的数组）。为了方便使用，通过 `tool.js` 的函数将 `precomputeL` 转换为 3x9 的矩阵。
 
 通过 `uniformMatrix3fv` 函数，我们可以将材质里存储的信息上传到GPU上。这个函数接受三个参数，具体请查阅 [WebGL文档 - uniformMatrix](https://developer.mozilla.org/en-US/docs/Web/API/WebGLRenderingContext/uniformMatrix) 。其中第一个参数的作用是在我们自己创建的 `PRTMaterial` 中，`uniforms` 包含了 `uPrecomputeL[0]` , `uPrecomputeL[1]` 和 `uPrecomputeL[2]` 。在GPU内的工作不需要我们关注，我们只需要有在CPU上的 uniform ，就可以通过API自动访问到GPU上对应的内容。换句话说，当获取一个 uniform 或属性的位置，实际上得到的是一个在CPU端的引用，但在底层，这个引用会映射到GPU上的一个具体位置。而链接 uniform 的步骤在 `Shader.js` 的 `this.program = this.addShaderLocations（）` 中完成（看看代码就能懂了，只是比较绕，在我的HW1文章中也有分析过）， `shader.program` 有三个属性分别是：`glShaderProgram`, `uniforms`, 和 `attribs`。而具体声明的位置则是在 `XXXshader.glsl` 中，在下一步中我们就会完成它。
@@ -375,6 +381,8 @@ if (/^uPrecomputeL\[\d\]$/.test(k)) {
 ```
 
 > 也可以将 `Mat3Value` 的计算放在i循环的外面，减少计算次数。
+
+#### 编写顶点着色器
 
 明白了上面代码的作用之后，接下来的任务就非常明了了。上一步我们将每一个球谐系数都传到了 GPU 的 `uPrecomputeL[]` 中，接下来在GPU上编程计算球谐系数和传输矩阵的点乘，也就是下图 light_coefficient * transport_matrix。
 
@@ -415,7 +423,110 @@ void main(void) {
 }
 ```
 
-#### 添加CornellBox场景
+另外值得一说的是，在渲染框架中为一个名为 `aNormalPosition` 的attribute设置了数值，如果在Shader中没有使用的话就会被WebGL优化掉，导致浏览器不停报错。
+
+#### 编写片元着色器
+
+在顶点着色器中完成对当前顶点着色的计算之后，在片元着色器中插值计算颜色。由于在顶点着色器中为每个顶点计算的`vColor`值会在片元着色器中被自动插值，因此直接使用就可以了。
+
+```cpp
+// prtFragment.glsl
+
+#ifdef GL_ES
+precision mediump float;
+#endif
+
+varying highp vec3 vColor;
+
+void main(){
+  gl_FragColor = vec4(vColor, 1.0);
+}
+```
+
+### 曝光与颜色矫正
+
+虽然框架作者提及PRT预计算保存的结果是在线性空间中的，不需要再进行 gamma 矫正了，但是显然最终结果是有问题的。如果您没有事先在计算系数的时候除 $\pi$ ，那么以Skybox场景为例子，就会出现过曝的问题。如果事先除了 $\pi$ ，但是没有做色彩矫正，就会在实时渲染框架中出现过暗的问题。
+
+<img title="" src="https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/PicGo_dir/202310312156208.png" alt="" width="533" data-align="center">
+
+首先在计算系数的时候除以 $\pi$ ，然后再做一个色彩矫正。怎么做呢？我们可以参照nori框架的导出图片过程中有一个 `toSRGB()` 的函数：
+
+```cpp
+// common.cpp
+Color3f Color3f::toSRGB() const {
+    Color3f result;
+
+    for (int i=0; i<3; ++i) {
+        float value = coeff(i);
+
+        if (value <= 0.0031308f)
+            result[i] = 12.92f * value;
+        else
+            result[i] = (1.0f + 0.055f)
+                * std::pow(value, 1.0f/2.4f) -  0.055f;
+    }
+
+    return result;
+}
+```
+
+我们可以仿照这个在片元着色其中做色彩矫正。
+
+```cpp
+//prtFragment.glsl
+
+#ifdef GL_ES
+precision mediump float;
+#endif
+
+varying highp vec3 vColor;
+
+vec3 toneMapping(vec3 color){
+    vec3 result;
+
+    for (int i=0; i<3; ++i) {
+        if (color[i] <= 0.0031308)
+            result[i] = 12.92 * color[i];
+        else
+            result[i] = (1.0 + 0.055) * pow(color[i], 1.0/2.4) - 0.055;
+    }
+
+    return result;
+}
+
+void main(){
+  vec3 color = toneMapping(vColor); 
+  gl_FragColor = vec4(color, 1.0);
+}
+```
+
+这样就可以保证实时渲染框架渲染的结果与nori框架的截图结果一致了。
+
+<img title="" src="https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/PicGo_dir/202310312209259.png" alt="" width="547" data-align="center">
+
+我们也可以做其他的颜色矫正，这里提供几种常见的Tone Mapping方法，用于将HDR范围转换至LDR范围。
+
+```glsl
+vec3 linearToneMapping(vec3 color) {
+    return color / (color + vec3(1.0));
+}
+vec3 reinhardToneMapping(vec3 color) {
+    return color / (vec3(1.0) + color);
+}
+vec3 exposureToneMapping(vec3 color, float exposure) {
+    return vec3(1.0) - exp(-color * exposure);
+}
+vec3 filmicToneMapping(vec3 color) {
+    color = max(vec3(0.0), color - vec3(0.004));
+    color = (color * (6.2 * color + 0.5)) / (color * (6.2 * color + 1.7) + 0.06);
+    return color;
+}
+
+```
+
+
+
+### 添加CornellBox场景
 
 默认框架代码中没有CornellBox，我们自行添加：
 
