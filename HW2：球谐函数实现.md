@@ -1,3 +1,5 @@
+
+
 ![image-20231030230515084](https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/remo_t/image-20231030230515084.png)
 
 <center> PRT渲染材质截图 </center>
@@ -443,7 +445,7 @@ void main(){
 }
 ```
 
-### 曝光与颜色矫正
+## 曝光与颜色矫正
 
 虽然框架作者提及PRT预计算保存的结果是在线性空间中的，不需要再进行 gamma 矫正了，但是显然最终结果是有问题的。如果您没有事先在计算系数的时候除 $\pi$ ，那么以Skybox场景为例子，就会出现过曝的问题。如果事先除了 $\pi$ ，但是没有做色彩矫正，就会在实时渲染框架中出现过暗的问题。
 
@@ -521,14 +523,13 @@ vec3 filmicToneMapping(vec3 color) {
     color = (color * (6.2 * color + 0.5)) / (color * (6.2 * color + 1.7) + 0.06);
     return color;
 }
-
 ```
 
+到这里为止，作业的基础部分就完成了。
 
+## 添加CornellBox场景
 
-### 添加CornellBox场景
-
-默认框架代码中没有CornellBox，我们自行添加：
+默认框架代码中没有CornellBox，但是资源文件里面有，这就需要我们自行添加：
 
 ```js
 // engine.js
@@ -544,7 +545,7 @@ var envmap = [
 ```
 
 ```js
-//engine.js
+// engine.js
 
 function createGUI() {
     const gui = new dat.gui.GUI();
@@ -556,7 +557,107 @@ function createGUI() {
 }
 ```
 
-#### 
+<img title="" src="https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/PicGo_dir/202311011536493.png" alt="" width="477" data-align="center">
+
+## 基础部分结果展示
+
+> 分别展示shadowed和unshadowed的四个场景。
+
+<img title="" src="https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/PicGo_dir/202311011555458.png" alt="" width="768" data-align="center">
+
+## 考虑传输项光线多次弹射
+
+> 计算多次弹射的光线传输与光线追踪有相似之处，在使用球谐函数（Spherical Harmonics，SH）进行光照近似时，您可以结合光线追踪来计算这些多次反射的效果。
+
+### 完整代码
+
+```cpp
+// TODO: leave for bonus
+Eigen::MatrixXf m_IndirectCoeffs = Eigen::MatrixXf::Zero(SHCoeffLength, mesh->getVertexCount());
+int sample_side = static_cast<int>(floor(sqrt(m_SampleCount)));
+
+std::random_device rd;
+std::mt19937 gen(rd());
+std::uniform_real_distribution<> rng(0.0, 1.0);
+
+const double twoPi = 2.0 * M_PI;
+
+for(int bo = 0; bo < m_Bounce; bo++)
+{
+    for (int i = 0; i < mesh->getVertexCount(); i++)
+    {
+        const Point3f &v = mesh->getVertexPositions().col(i);
+        const Normal3f &n = mesh->getVertexNormals().col(i);
+
+        std::vector<float> coeff(SHCoeffLength, 0.0f);
+        for (int t = 0; t < sample_side; t++) {
+            for (int p = 0; p < sample_side; p++) {
+                double alpha = (t + rng(gen)) / sample_side;
+                double beta = (p + rng(gen)) / sample_side;
+                double phi = twoPi * beta;
+                double theta = acos(2.0 * alpha - 1.0);
+                
+                Eigen::Array3d d = sh::ToVector(phi, theta);
+                const Vector3f wi(d[0], d[1], d[2]);
+                
+                double H = wi.dot(n);
+                if(H > 0.0) {
+                    const auto ray = Ray3f(v, wi);
+                    Intersection intersect;
+                    bool is_inter = scene->rayIntersect(ray, intersect);
+                    if(is_inter) {
+                        for(int j = 0; j < SHCoeffLength; j++) {
+                            const Vector3f coef3(
+                                m_TransportSHCoeffs.col((int)intersect.tri_index[0]).coeffRef(j),
+                                m_TransportSHCoeffs.col((int)intersect.tri_index[1]).coeffRef(j),
+                                m_TransportSHCoeffs.col((int)intersect.tri_index[2]).coeffRef(j)
+                            );
+                            coeff[j] += intersect.bary.dot(coef3) / m_SampleCount;
+                        }
+                    }
+                }
+            }
+        }
+
+        for (int j = 0; j < SHCoeffLength; j++)
+        {
+            m_IndirectCoeffs.col(i).coeffRef(j) = coeff[j] - m_IndirectCoeffs.col(i).coeffRef(j);
+        }
+    }
+    m_TransportSHCoeffs += m_IndirectCoeffs;
+}
+
+```
+
+### 分析
+
+在计算有遮挡的阴影的基础上（**直接光照**），加上二次反射光（**间接照明**）的贡献。而二次反射的光线也可以再进行相同的步骤。对于间接光照的计算，使用球谐函数对这些反射光线的照明进行近似。如果考虑多次弹射，则使用 $\hat{L}\left(x^{\prime}, \omega_i\right) $ 进行递归计算，终止条件可以是递归深度或光线强度低于某个阈值。下面就是文字的公式描述。
+
+$$
+L_{D I}=L_{D S}+\frac{\rho}{\pi} \int_S \hat{L}\left(x^{\prime}, \omega_i\right)\left(1-V\left(\omega_i\right)\right) \max \left(N_x \cdot \omega_i, 0\right) \mathrm{d} \omega_i
+$$
+
+
+
+
+
+### 结果
+
+观察一下，整体上没有太大差异，只是阴影的地方更加亮了。
+
+![](https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/PicGo_dir/202311011649761.png)
+
+
+
+
+
+
+
+
+
+
+
+## 附录
 
 <img title="" src="https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/remo_t/image-20231027162044646.png" alt="模型法线" style="zoom:50%;" width="529" data-align="center">
 
