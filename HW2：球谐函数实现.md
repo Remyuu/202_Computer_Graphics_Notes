@@ -1,8 +1,8 @@
-
-
 ![image-20231030230515084](https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/remo_t/image-20231030230515084.png)
 
 <center> PRT渲染材质截图 </center>
+
+[TOC]
 
 ## 预计算球谐系数
 
@@ -565,8 +565,10 @@ function createGUI() {
 
 <img title="" src="https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/PicGo_dir/202311011555458.png" alt="" width="768" data-align="center">
 
-## 考虑传输项光线多次弹射
+## 考虑传输项光线多次弹射（bonus 1）
 
+> 这是提高的第一部分。
+> 
 > 计算多次弹射的光线传输与光线追踪有相似之处，在使用球谐函数（Spherical Harmonics，SH）进行光照近似时，您可以结合光线追踪来计算这些多次反射的效果。
 
 ### 完整代码
@@ -596,10 +598,10 @@ for(int bo = 0; bo < m_Bounce; bo++)
                 double beta = (p + rng(gen)) / sample_side;
                 double phi = twoPi * beta;
                 double theta = acos(2.0 * alpha - 1.0);
-                
+
                 Eigen::Array3d d = sh::ToVector(phi, theta);
                 const Vector3f wi(d[0], d[1], d[2]);
-                
+
                 double H = wi.dot(n);
                 if(H > 0.0) {
                     const auto ray = Ray3f(v, wi);
@@ -637,9 +639,61 @@ $$
 L_{D I}=L_{D S}+\frac{\rho}{\pi} \int_S \hat{L}\left(x^{\prime}, \omega_i\right)\left(1-V\left(\omega_i\right)\right) \max \left(N_x \cdot \omega_i, 0\right) \mathrm{d} \omega_i
 $$
 
+简略代码与注释如下：
 
+```cpp
+// TODO: leave for bonus
+// 首先初始化球谐系数
+Eigen::MatrixXf m_IndirectCoeffs = Eigen::MatrixXf::Zero(SHCoeffLength, mesh->getVertexCount());
+// 采样侧边的大小 = 样本数量的平方根 // 这样我们在后面可以进行二维的采样
+int sample_side = static_cast<int>(floor(sqrt(m_SampleCount)));
 
+// 生成随机数，范围是 [0,1]
+...
+std::uniform_real_distribution<> rng(0.0, 1.0);
 
+// 定义常量 2 \pi
+...
+
+// 循环计算多次反射 （m_Bounce 次）
+for (int bo = 0; bo < m_Bounce; bo++) {
+  // 对每个顶点做处理
+  // 对于每个顶点，会做如下操作
+  // - 获取该顶点的位置和法线 v n
+  // - rng()获得随机的二维方向 alpha beta
+  // - 如果wi在顶点法线的同一侧，则继续进行：
+  // - 生成一条从顶点出发的射线，并检查这条射线是否与场景中的其他物体相交
+  // - 如果有相交的物体，代码会使用相交处的信息和现有的球谐系数来更新该顶点的光线间接反射信息。
+  for (int i = 0; i < mesh->getVertexCount(); i++) {
+    const Point3f &v = mesh->getVertexPositions().col(i);
+    const Normal3f &n = mesh->getVertexNormals().col(i);
+    ...
+    for (int t = 0; t < sample_side; t++) {
+      for (int p = 0; p < sample_side; p++) {
+        ...
+        double H = wi.dot(n);
+        if (H > 0.0) {
+          // 这里就是公式中的 $(1-V(w_i))$ 如果不满足，这一轮循环就不累加
+          bool is_inter = scene->rayIntersect(ray, intersect);
+          if (is_inter) {
+            for (int j = 0; j < SHCoeffLength; j++) {
+              ...
+              coeff[j] += intersect.bary.dot(coef3) / m_SampleCount;
+            }
+          }
+        }
+      }
+    }
+    // 对于每个顶点，会根据计算的反射信息更新其球谐系数。
+    for (int j = 0; j < SHCoeffLength; j++) {
+      m_IndirectCoeffs.col(i).coeffRef(j) = coeff[j] - m_IndirectCoeffs.col(i).coeffRef(j);
+    }
+  }
+  m_TransportSHCoeffs += m_IndirectCoeffs;
+}
+```
+
+在之前的步骤中，我们只是计算了每一个顶点的球谐函数，并不涉及到三角形中心的插值计算。但是在光线多次弹射的实现中，从顶点向正半球发射的光线会与顶点之外的位置相交，因此我们需要通过重心坐标插值计算获取发射光线与三角形内部的交点的信息，这就是 `intersect.bary` 的作用。
 
 ### 结果
 
@@ -647,18 +701,303 @@ $$
 
 ![](https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/PicGo_dir/202311011649761.png)
 
+## 环境光照球谐函数旋转（bonus 2）
 
+> 提高2。
+> 
+> 低阶的球鞋光照的旋转可以使用「低阶SH快速旋转方法」。
 
+### 代码
 
+首先让Skybox转起来。 `[0, 1, 0]` 意味着绕y轴旋转。然后通过 `getRotationPrecomputeL` 函数计算旋转后的球谐函数。最后应用到 `Mat3Value` 。
 
+```js
+// WebGLRenderer.js
+let cameraModelMatrix = mat4.create();
+// Edit Start
+mat4.fromRotation(cameraModelMatrix, timer, [0, 1, 0]);
+// Edit End
+if (k == 'uMoveWithCamera') { // The rotation of the skybox
+    gl.uniformMatrix4fv(
+        this.meshes[i].shader.program.uniforms[k],
+        false,
+        cameraModelMatrix);
+}
 
+// Bonus - Fast Spherical Harmonic Rotation
+// Edit Start
+let precomputeL_RGBMat3 = getRotationPrecomputeL(precomputeL[guiParams.envmapId], cameraModelMatrix);
+Mat3Value = getMat3ValueFromRGB(precomputeL_RGBMat3);
+// Edit End
+```
 
+接下来跳转到 tool.js ，编写 `getRotationPrecomputeL` 函数。
 
+```js
+// tools.js
+function getRotationPrecomputeL(precompute_L, rotationMatrix){
+    let rotationMatrix_inverse = mat4.create()
+    mat4.invert(rotationMatrix_inverse, rotationMatrix)
+    let r = mat4Matrix2mathMatrix(rotationMatrix_inverse)
 
+    let shRotateMatrix3x3 = computeSquareMatrix_3by3(r);
+    let shRotateMatrix5x5 = computeSquareMatrix_5by5(r);
 
+    let result = [];
+    for(let i = 0; i < 9; i++){
+        result[i] = [];
+    }
+    for(let i = 0; i < 3; i++){
+        let L_SH_R_3 = math.multiply([precompute_L[1][i], precompute_L[2][i], precompute_L[3][i]], shRotateMatrix3x3);
+        let L_SH_R_5 = math.multiply([precompute_L[4][i], precompute_L[5][i], precompute_L[6][i], precompute_L[7][i], precompute_L[8][i]], shRotateMatrix5x5);
 
-## 附录
+        result[0][i] = precompute_L[0][i];
+        result[1][i] = L_SH_R_3._data[0];
+        result[2][i] = L_SH_R_3._data[1];
+        result[3][i] = L_SH_R_3._data[2];
+        result[4][i] = L_SH_R_5._data[0];
+        result[5][i] = L_SH_R_5._data[1];
+        result[6][i] = L_SH_R_5._data[2];
+        result[7][i] = L_SH_R_5._data[3];
+        result[8][i] = L_SH_R_5._data[4];
+    }
 
-<img title="" src="https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/remo_t/image-20231027162044646.png" alt="模型法线" style="zoom:50%;" width="529" data-align="center">
+    return result;
+}
 
-<center> 模型法线 </center>
+function computeSquareMatrix_3by3(rotationMatrix){ // 计算方阵SA(-1) 3*3 
+
+    // 1、pick ni - {ni}
+    let n1 = [1, 0, 0, 0]; let n2 = [0, 0, 1, 0]; let n3 = [0, 1, 0, 0];
+
+    // 2、{P(ni)} - A  A_inverse
+    let n1_sh = SHEval(n1[0], n1[1], n1[2], 3)
+    let n2_sh = SHEval(n2[0], n2[1], n2[2], 3)
+    let n3_sh = SHEval(n3[0], n3[1], n3[2], 3)
+
+    let A = math.matrix(
+    [
+        [n1_sh[1], n2_sh[1], n3_sh[1]], 
+        [n1_sh[2], n2_sh[2], n3_sh[2]], 
+        [n1_sh[3], n2_sh[3], n3_sh[3]], 
+    ]);
+
+    let A_inverse = math.inv(A);
+
+    // 3、用 R 旋转 ni - {R(ni)}
+    let n1_r = math.multiply(rotationMatrix, n1);
+    let n2_r = math.multiply(rotationMatrix, n2);
+    let n3_r = math.multiply(rotationMatrix, n3);
+
+    // 4、R(ni) SH投影 - S
+    let n1_r_sh = SHEval(n1_r[0], n1_r[1], n1_r[2], 3)
+    let n2_r_sh = SHEval(n2_r[0], n2_r[1], n2_r[2], 3)
+    let n3_r_sh = SHEval(n3_r[0], n3_r[1], n3_r[2], 3)
+
+    let S = math.matrix(
+    [
+        [n1_r_sh[1], n2_r_sh[1], n3_r_sh[1]], 
+        [n1_r_sh[2], n2_r_sh[2], n3_r_sh[2]], 
+        [n1_r_sh[3], n2_r_sh[3], n3_r_sh[3]], 
+
+    ]);
+
+    // 5、S*A_inverse
+    return math.multiply(S, A_inverse)   
+
+}
+
+function computeSquareMatrix_5by5(rotationMatrix){ // 计算方阵SA(-1) 5*5
+
+    // 1、pick ni - {ni}
+    let k = 1 / math.sqrt(2);
+    let n1 = [1, 0, 0, 0]; let n2 = [0, 0, 1, 0]; let n3 = [k, k, 0, 0]; 
+    let n4 = [k, 0, k, 0]; let n5 = [0, k, k, 0];
+
+    // 2、{P(ni)} - A  A_inverse
+    let n1_sh = SHEval(n1[0], n1[1], n1[2], 3)
+    let n2_sh = SHEval(n2[0], n2[1], n2[2], 3)
+    let n3_sh = SHEval(n3[0], n3[1], n3[2], 3)
+    let n4_sh = SHEval(n4[0], n4[1], n4[2], 3)
+    let n5_sh = SHEval(n5[0], n5[1], n5[2], 3)
+
+    let A = math.matrix(
+    [
+        [n1_sh[4], n2_sh[4], n3_sh[4], n4_sh[4], n5_sh[4]], 
+        [n1_sh[5], n2_sh[5], n3_sh[5], n4_sh[5], n5_sh[5]], 
+        [n1_sh[6], n2_sh[6], n3_sh[6], n4_sh[6], n5_sh[6]], 
+        [n1_sh[7], n2_sh[7], n3_sh[7], n4_sh[7], n5_sh[7]], 
+        [n1_sh[8], n2_sh[8], n3_sh[8], n4_sh[8], n5_sh[8]], 
+    ]);
+
+    let A_inverse = math.inv(A);
+
+    // 3、用 R 旋转 ni - {R(ni)}
+    let n1_r = math.multiply(rotationMatrix, n1);
+    let n2_r = math.multiply(rotationMatrix, n2);
+    let n3_r = math.multiply(rotationMatrix, n3);
+    let n4_r = math.multiply(rotationMatrix, n4);
+    let n5_r = math.multiply(rotationMatrix, n5);
+
+    // 4、R(ni) SH投影 - S
+    let n1_r_sh = SHEval(n1_r[0], n1_r[1], n1_r[2], 3)
+    let n2_r_sh = SHEval(n2_r[0], n2_r[1], n2_r[2], 3)
+    let n3_r_sh = SHEval(n3_r[0], n3_r[1], n3_r[2], 3)
+    let n4_r_sh = SHEval(n4_r[0], n4_r[1], n4_r[2], 3)
+    let n5_r_sh = SHEval(n5_r[0], n5_r[1], n5_r[2], 3)
+
+    let S = math.matrix(
+    [    
+        [n1_r_sh[4], n2_r_sh[4], n3_r_sh[4], n4_r_sh[4], n5_r_sh[4]], 
+        [n1_r_sh[5], n2_r_sh[5], n3_r_sh[5], n4_r_sh[5], n5_r_sh[5]], 
+        [n1_r_sh[6], n2_r_sh[6], n3_r_sh[6], n4_r_sh[6], n5_r_sh[6]], 
+        [n1_r_sh[7], n2_r_sh[7], n3_r_sh[7], n4_r_sh[7], n5_r_sh[7]], 
+        [n1_r_sh[8], n2_r_sh[8], n3_r_sh[8], n4_r_sh[8], n5_r_sh[8]], 
+    ]);
+
+    // 5、S*A_inverse
+    return math.multiply(S, A_inverse)  
+}
+
+function mat4Matrix2mathMatrix(rotationMatrix){
+
+    let mathMatrix = [];
+    for(let i = 0; i < 4; i++){
+        let r = [];
+        for(let j = 0; j < 4; j++){
+            r.push(rotationMatrix[i*4+j]);
+        }
+        mathMatrix.push(r);
+    }
+    // Edit Start
+    //return math.matrix(mathMatrix)
+    return math.transpose(mathMatrix)
+    // Edit End
+}
+function getMat3ValueFromRGB(precomputeL){
+
+    let colorMat3 = [];
+    for(var i = 0; i<3; i++){
+        colorMat3[i] = mat3.fromValues( precomputeL[0][i], precomputeL[1][i], precomputeL[2][i],
+                                        precomputeL[3][i], precomputeL[4][i], precomputeL[5][i],
+                                        precomputeL[6][i], precomputeL[7][i], precomputeL[8][i] ); 
+    }
+    return colorMat3;
+}
+```
+
+### 结果
+
+<img title="" src="https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/PicGo_dir/converted_to_gif-2.gif" alt="" data-align="center" width="552">
+
+动画GIF可以在[此处🔗](https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/PicGo_dir/converted_to_gif-2.gif)获取。
+
+### 原理
+
+#### 两项关键性质
+
+首先简单说说原理，这里利用了球谐函数的两个性质。
+
+1. **旋转不变性**
+   
+   在三维空间中旋转一个函数的坐标，并将这个旋转后的坐标代入球谐函数，那么你会得到与原始函数相同的结果。
+   
+   $$
+   R(f(x))=f(R(x))
+   $$
+
+2. **旋转的线性性**
+   
+   对于球谐函数的每一“层”或“带”（band）（也就是给定的阶数 l 的所有球谐函数），其SH系数可以被旋转，并且这个旋转是线性的。也就是说，可以通过一个矩阵乘法来旋转一个球谐函数展开的系数。
+   
+   $$
+   f(x)=\sum_{l=0}^{\infty} \sum_{m=-l}^l a_{l m} Y_{l m}(x)
+   $$
+
+#### Wigner D矩阵旋转方法概述
+
+> 球谐函数的旋转是一个深入的话题，这里直接概述，不涉及复杂的数学证明。
+> 
+> 作业框架中给的是基于投影的方法，本文先介绍一个更精确的方法，Wigner D矩阵。
+> 
+> 更加详细的内容请去看：[球谐光照笔记（旋转篇） - 网易游戏雷火事业群的文章 - 知乎](https://zhuanlan.zhihu.com/p/140421707) ，反正我是没看懂QAQ。
+
+由于当前使用的是前三阶的球谐函数，并且 band0 只有一个投影系数，所以我们只需要处理band1, band2 两层上各自 $3*3$ , $5*5$ 的旋转矩阵 $M_1, M_2$ 。
+
+球谐函数 $Y_{l m}$ 的旋转可以表示为：
+
+$$
+Y_{l m}^R(\theta, \phi)=\sum_{m^{\prime}=-l}^l D_{m m^{\prime}}^l(R) Y_{l m^{\prime}}(\theta, \phi)
+$$
+
+其中， $D_{m m^{\prime}}^l(R)$ 是旋转矩阵元素，它给出了如何将球谐系数从原始方向旋转到新方向。
+
+----
+
+假设有一个函数 $f(\theta, \phi)$ ，它可以**展开为球谐函数的线性组合** :
+
+$$
+f(\theta, \phi)=\sum_{l=0}^{\infty} \sum_{m=-l}^l a_{l m} Y_{l m}(\theta, \phi)
+$$
+
+如果想要旋转这个函数，我们不直接旋转每一个球谐函数，而是**旋转它们的系数**。新的展开系数 $a_{l m}^R$ 可以由原始系数 $a_{l m}$ 通过旋转矩阵得到 :
+
+$$
+a_{l m}^R=\sum_{m^{\prime}=-l}^l D_{m m^{\prime}}^l(R) a_{l m^{\prime}}
+$$
+
+接下来就到关键的一步了，如何**计算旋转矩阵**？
+
+<img title="" src="https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/PicGo_dir/202311021612100.png" alt="" width="573" data-align="center">
+
+在作业框架中，我们了解到，band 1需要构建一个 $3*3$ 的矩阵，band 2需要构建 $5*5$ 的矩阵。也就是说，对于每个阶数为 $l$ 的 band，它都有 $2l + 1$ 个合法的解，每个解对应当前 band 上的一个基函数，这是勒让德方程的一个特性。
+
+现在，我们来考虑旋转的影响。
+
+当我们旋转一个环境光照 $f(\theta, \phi)$ ，我们不会去旋转基函数，而是“旋转”所有的系数。旋转一个特定的系数的过程涉及到使用Wigner D矩阵 $D^l$ 。首先，当我们谈论旋转，我们通常指的是围绕某个轴的旋转，定义由欧拉角来指定。我们就为每一阶都计算一个边长是 $2l+1$ 的方阵 $D^l(R)$ 。
+
+一旦得到了每一阶对应的旋转矩阵，我们就可以轻松计算出“旋转”后的新系数：
+
+$$
+\text{rotated coefficients} = D^l(R) \times \text{original coefficients }
+$$
+
+然而，计算Wigner D矩阵的元素可能会有些复杂，特别是对于较高的阶数。因此，作业提示中给出的是一种基于投影的方法。接下来我们看看上面两段代码是怎么实现的。
+
+#### 投影的近似方法
+
+首先，选择 $2 l+1$ 个 normal vector $n$ ，这个量的选取需要确保线性独立性，也就是尽可能均匀的覆盖球面（Fibonacci球面采样也许是个不错的选择），否则在后面会出现计算奇异的矩阵的错误，**确保生成的矩阵是满秩的**。
+
+对于每一个normal vector $n_i$ ，在球谐函数上投影（`SHEval`函数），这实际上是在计算球谐函数与该方向上的点乘。从这个投影中，可以得到一个 $2 l+1$ 维向量 $P\left(n_i\right)$ ，它的每一个分量都是球谐函数的一个系数。
+
+使用上面得到的 $P\left(n_i\right)$ 向量，我们可以构建矩阵 $\mathrm{A}$ 和逆矩阵 $A^{-1}$ 。如果我们记 $P\left(n_i\right)[j]$ 为 normal vector $n_i$ 在球谐函数上的第 $\mathrm{j}$ 个系数, 那么矩阵 $A$ 可以写为：
+
+$$
+A=\left(\begin{array}{lllll}
+P\left(n_1\right)[4] & P\left(n_2\right)[4] & P\left(n_3\right)[4] & P\left(n_4\right)[4] & P\left(n_5\right)[4] \\
+P\left(n_1\right)[5] & P\left(n_2\right)[5] & P\left(n_3\right)[5] & P\left(n_4\right)[5] & P\left(n_5\right)[5] \\
+P\left(n_1\right)[6] & P\left(n_2\right)[6] & P\left(n_3\right)[6] & P\left(n_4\right)[6] & P\left(n_5\right)[6] \\
+P\left(n_1\right)[7] & P\left(n_2\right)[7] & P\left(n_3\right)[7] & P\left(n_4\right)[7] & P\left(n_5\right)[7] \\
+P\left(n_1\right)[8] & P\left(n_2\right)[8] & P\left(n_3\right)[8] & P\left(n_4\right)[8] & P\left(n_5\right)[8]
+\end{array}\right)
+$$
+
+对于每一个normal vector $n_i$, 应用旋转 $\mathrm{R}$, 得到 $R\left(n_i\right)$  ，即（前乘）：
+
+$$
+v' = R \times v
+$$
+
+然后，对于这些旋转后的normal vectors, 再次进行球谐函数投影, 得到 $P\left(R\left(n_i\right)\right)$ 。
+
+使用从旋转后的normal vectors得到的 $P\left(R\left(n_i\right)\right)$ 向量, 我们可以构建矩阵S。计算旋转矩阵 $\mathrm{M}$ : 旋转矩阵 $M=S A^{-1}$ 可以告诉我们如何通过简单的矩阵乘法来旋转球谐系数。
+
+使用矩阵 $\mathrm{M}$ 乘以原始的球谐系数向量，我们可以得到旋转后的球谐系数。对每个 $I$ 层重复: 为了得到完整的旋转后的球谐系数，我们需要对每个 $I$ 层重复上述过程。
+
+ 
+
+## Reference
+
+1. Games 202
+
+2. https://github.com/DrFlower/GAMES_101_202_Homework/tree/main/Homework_202/Assignment2
