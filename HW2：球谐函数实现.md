@@ -504,7 +504,7 @@ void main(){
 
 这样就可以保证实时渲染框架渲染的结果与nori框架的截图结果一致了。
 
-<img title="" src="https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/PicGo_dir/202310312209259.png" alt="" width="547" data-align="center">
+<img title="" src="https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/PicGo_dir/202310312209259.png" alt="" width="489" data-align="center">
 
 我们也可以做其他的颜色矫正，这里提供几种常见的Tone Mapping方法，用于将HDR范围转换至LDR范围。
 
