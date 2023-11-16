@@ -96,26 +96,26 @@ void main() {
 
 ```glsl
 bool RayMarch(vec3 ori, vec3 dir, out vec3 hitPos) {
-  float step = 0.05;
-  const int totalStepTimes = 150; 
-  int curStepTimes = 0;
+    float step = 0.05;
+    const int totalStepTimes = 150; 
+    vec3 stepDir = normalize(dir) * step;
+    vec3 curPos = ori;
+    const float threshold = 0.0001;
 
-  vec3 stepDir = normalize(dir) * step;
-  vec3 curPos = ori;
-  for(int curStepTimes = 0; curStepTimes < totalStepTimes; curStepTimes++){
-    vec2 screenUV = GetScreenCoordinate(curPos);
-    float rayDepth = GetDepth(curPos);
-    float gBufferDepth = GetGBufferDepth(screenUV);
+    for(int i = 0; i < totalStepTimes; i++) {
+        vec2 screenUV = GetScreenCoordinate(curPos);
+        float rayDepth = GetDepth(curPos);
+        float gBufferDepth = GetGBufferDepth(screenUV);
 
-    if(rayDepth - gBufferDepth > 0.0001){
-      hitPos = curPos;
-      return true;
+        // Check if the ray has hit an object
+        if(rayDepth - gBufferDepth > threshold) {
+            hitPos = curPos;
+            return true;
+        }
+        curPos += stepDir;
     }
 
-    curPos += stepDir;
-  }
-
-  return false;
+    return false;
 }
 ```
 
@@ -156,8 +156,6 @@ void main() {
 }
 ```
 
-
-
-
+以下是经过加权后的结果，如果单纯想测试SSR的效果，请在 `main()` 中自行调整。
 
 <img title="" src="https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/PicGo_dir/202311161910641.png" alt="" data-align="center">
