@@ -26,8 +26,8 @@
 
 ```js
 // engine.js
-// const camera = new THREE.PerspectiveCamera(75, gl.canvas.clientWidth / gl.canvas.clientHeight, 1, 1e5);
-const camera = new THREE.PerspectiveCamera(75, gl.canvas.clientWidth / gl.canvas.clientHeight, 5e-2, 1e2);![loading-ag-6753]()
+// const camera = new THREE.PerspectiveCamera(75, gl.canvas.clientWidth / gl.canvas.clientHeight, 0.0001, 1e5);
+const camera = new THREE.PerspectiveCamera(75, gl.canvas.clientWidth / gl.canvas.clientHeight, 5e-2, 1e2);
 ```
 
 这样就可以得到相当锐利的边界了。
@@ -92,34 +92,37 @@ void main() {
 
 作业框架的「cube1」本身就包含了地面，所以这玩意最终得到的SSR效果就不太美观。这里的“美观”是指论文中结果图的清晰度或游戏中积水反射效果的精致度。
 
+实现SSR最简单的方法就是使用Linear Raymarch，通过一个个小步进逐步确定当前位置与gBuffer的深度位置的遮挡关系。
 
+<img title="" src="https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/PicGo_dir/202311162250903.png" alt="" data-align="center">
 
 ```glsl
 bool RayMarch(vec3 ori, vec3 dir, out vec3 hitPos) {
-    float step = 0.05;
-    const int totalStepTimes = 150; 
-    vec3 stepDir = normalize(dir) * step;
-    vec3 curPos = ori;
-    const float threshold = 0.0001;
+  const int totalStepTimes = 150;
+  const float threshold = 0.0001;
+  float step = 0.05;
+  vec3 stepDir = normalize(dir) * step;
+  vec3 curPos = ori;
 
-    for(int i = 0; i < totalStepTimes; i++) {
-        vec2 screenUV = GetScreenCoordinate(curPos);
-        float rayDepth = GetDepth(curPos);
-        float gBufferDepth = GetGBufferDepth(screenUV);
+  for(int i = 0; i < totalStepTimes; i++) {
+    vec2 screenUV = GetScreenCoordinate(curPos);
+    float rayDepth = GetDepth(curPos);
+    float gBufferDepth = GetGBufferDepth(screenUV);
 
-        // Check if the ray has hit an object
-        if(rayDepth - gBufferDepth > threshold) {
-            hitPos = curPos;
-            return true;
-        }
-        curPos += stepDir;
+    // Check if the ray has hit an object
+    if(rayDepth > gBufferDepth + threshold){
+      hitPos = curPos;
+      return true;
     }
-
-    return false;
+    curPos += stepDir;
+  }
+  return false;
 }
 ```
 
+最后微调步进 `step` 的大小。最终我取到0.05。如果步进取的太大，反射的画面会“断层”。如果步进取得太小且步进次数又不够，那么可能导致本来应该反射的地方因为步进距离不够导致计算的终止。
 
+![](https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/PicGo_dir/202311162346552.png)
 
 ```glsl
 vec3 EvalSSR(vec3 wi, vec3 wo, vec2 uv) {
@@ -127,8 +130,8 @@ vec3 EvalSSR(vec3 wi, vec3 wo, vec2 uv) {
   vec3 relfectDir = normalize(reflect(-wo, worldNormal));
   vec3 hitPos;
   if(RayMarch(vPosWorld.xyz, relfectDir, hitPos)){
-      vec2 screenUV = GetScreenCoordinate(hitPos);
-      return GetGBufferDiffuse(screenUV);
+    vec2 screenUV = GetScreenCoordinate(hitPos);
+    return GetGBufferDiffuse(screenUV);
   }
   else{
     return vec3(0.); 
@@ -136,7 +139,7 @@ vec3 EvalSSR(vec3 wi, vec3 wo, vec2 uv) {
 }
 ```
 
-
+写一个调用 `RayMarch` 的函数包装起来，方便在 `main()` 中使用。
 
 ```glsl
 void main() {
@@ -156,6 +159,8 @@ void main() {
 }
 ```
 
-以下是经过加权后的结果，如果单纯想测试SSR的效果，请在 `main()` 中自行调整。
+如果单纯想测试SSR的效果，请在 `main()` 中自行调整。
 
 <img title="" src="https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/PicGo_dir/202311161910641.png" alt="" data-align="center">
+
+<img title="" src="https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/PicGo_dir/202311161814134.png" alt="" data-align="center">
