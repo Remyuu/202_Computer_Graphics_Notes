@@ -2,7 +2,7 @@
 
 <center> PRT渲染材质截图 </center>
 
-[TOC]
+> 如果项目框架有其他问题可以先看助教的 [勘误帖](https://docs.qq.com/doc/DUG1UZGVDamh1YXVq) 。
 
 ## 预计算球谐系数
 
