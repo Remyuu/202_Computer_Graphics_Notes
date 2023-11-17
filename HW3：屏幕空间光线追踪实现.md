@@ -86,13 +86,19 @@ void main() {
 
 <img title="" src="https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/PicGo_dir/202311161758763.png" alt="" data-align="center">
 
-## 2. Screen Space Ray Tracing
+## 2. 镜面SSR
 
 > 实现 `RayMarch(ori, dir, out hitPos)` 函数，求出光线与物体的交点，返回光线是否与物体相交。参数 ori 和 dir 为世界坐标系中的值，分别代表光线的起点和方向，其中方向向量为单位向量。
+> 
+> 更多资料可以参考EA在SIG15的[课程报告](https://www.slideshare.net/DICEStudio/stochastic-screenspace-reflections)。
 
 作业框架的「cube1」本身就包含了地面，所以这玩意最终得到的SSR效果就不太美观。这里的“美观”是指论文中结果图的清晰度或游戏中积水反射效果的精致度。
 
-实现SSR最简单的方法就是使用Linear Raymarch，通过一个个小步进逐步确定当前位置与gBuffer的深度位置的遮挡关系。
+准确地说，在本文中我们实现的是最基础的「镜面SSR」，即Basic mirror-only SSR。
+
+<img title="" src="https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/PicGo_dir/202311171238510.png" alt="" data-align="center">
+
+实现「镜面SSR」最简单的方法就是使用Linear Raymarch，通过一个个小步进逐步确定当前位置与gBuffer的深度位置的遮挡关系。
 
 <img title="" src="https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/PicGo_dir/202311162250903.png" alt="" data-align="center">
 
@@ -120,7 +126,7 @@ bool RayMarch(vec3 ori, vec3 dir, out vec3 hitPos) {
 }
 ```
 
-最后微调步进 `step` 的大小。最终我取到0.05。如果步进取的太大，反射的画面会“断层”。如果步进取得太小且步进次数又不够，那么可能导致本来应该反射的地方因为步进距离不够导致计算的终止。
+最后微调步进 `step` 的大小。最终我取到0.05。如果步进取的太大，反射的画面会“断层”。如果步进取得太小且步进次数又不够，那么可能导致本来应该反射的地方因为步进距离不够导致计算的终止。下图的最大步进数为150。
 
 ![](https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/PicGo_dir/202311162346552.png)
 
@@ -149,6 +155,7 @@ void main() {
   vec3 wo = normalize(uCameraPos - vPosWorld.xyz);
   vec2 screenUV = GetScreenCoordinate(vPosWorld.xyz);
 
+  // Basic mirror-only SSR
   float reflectivity = 0.2;
 
   L = EvalDiffuse(wi, wo, screenUV) * EvalDirectionalLight(screenUV);
@@ -164,3 +171,19 @@ void main() {
 <img title="" src="https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/PicGo_dir/202311161910641.png" alt="" data-align="center">
 
 <img title="" src="https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/PicGo_dir/202311161814134.png" alt="" data-align="center">
+
+在2013年"Killzone Shadow Fall"发布之前，SSR技术仍然受到较大的限制，因为在实际开发中，我们通常需要模拟Glossy的物体，由于当时性能的限制，SSR技没有大规模采用。随着“Killzone Shadow Fall”的发布，标志着实时反射技术取得了重大的进展。得益于PS4的特殊硬件，使得实时渲染高质量Glossy和semi-reflective的物体成为可能。
+
+<img title="" src="https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/PicGo_dir/202311171306750.png" alt="" data-align="center">
+
+在接下来的几年中，SSR技术发展迅速，尤其是与PBR等技术的结合。
+
+从Nvidia的RTX显卡开始，实时光线追踪的兴起逐渐开始在某些场景替代了SSR。但是在大多数开发场景中，传统的SSR仍然占有相当大的戏份。
+
+未来的发展趋势依然是传统SSR技术与光线追踪技术的混合。
+
+## 3. 间接光照
+
+> 照着伪代码写。也就是用蒙特卡洛方法求解渲染方程。在采样的过程中可以使用框架提供的 `SampleHemisphereUniform(inout s, ou pdf)` 和 `SampleHemisphereCos(inout s, out pdf)` ，其中，这两个函数返回局部坐标，传入参数分别是随机数 `s` 和采样概率 `pdf` 。
+
+<img src="https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/PicGo_dir/202311171456252.png"/>
