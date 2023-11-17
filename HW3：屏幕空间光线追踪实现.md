@@ -8,7 +8,9 @@
 
 - Bonus 1：实现 Mipmap 优化的 Screen Space Ray Tracing。
 
-## 写在前面 - 关于框架的深度缓冲问题
+## 写在前面
+
+### 框架的深度缓冲问题
 
 这一次作业在 macOS 上会遇到比较严重的问题。正方体贴近地面的部分会随着摄像机的距离远近变化表现出异常的裁切锯齿问题。这个现象在 windows 上没有遇到，比较奇怪。
 
@@ -33,6 +35,37 @@ const camera = new THREE.PerspectiveCamera(75, gl.canvas.clientWidth / gl.canvas
 这样就可以得到相当锐利的边界了。
 
 <img title="" src="https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/PicGo_dir/202311141528946.png" alt="" width="462" data-align="center">
+
+### 增加「暂停渲染」功能
+
+这个部分是可选的。为了减轻电脑的压力，简单写一个暂停渲染的按钮。
+
+```js
+// engine.js
+let settings = {
+    'Render Switch': true
+};
+
+function createGUI() {
+	...
+    // Add the boolean switch here
+    gui.add(settings, 'Render Switch');
+	...
+}
+
+function mainLoop(now) {
+    if(settings['Render Switch']){
+        cameraControls.update();
+        renderer.render();
+    }
+    requestAnimationFrame(mainLoop);
+}
+requestAnimationFrame(mainLoop);
+```
+
+<img src="https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/remo_t/image-20231117191114477.png" alt="image-20231117191114477" />
+
+
 
 ## 1. 实现直接光照
 
@@ -185,5 +218,11 @@ void main() {
 ## 3. 间接光照
 
 > 照着伪代码写。也就是用蒙特卡洛方法求解渲染方程。在采样的过程中可以使用框架提供的 `SampleHemisphereUniform(inout s, ou pdf)` 和 `SampleHemisphereCos(inout s, out pdf)` ，其中，这两个函数返回局部坐标，传入参数分别是随机数 `s` 和采样概率 `pdf` 。
+
+写这个部分真是头痛啊，即使 `SAMPLE_NUM` 设置为1，我的电脑都汗流浃背了。Live Server一开，直接打字都有延迟了，受不了。M1pro就这么点性能了吗。而且最让我受不了的是，Safari浏览器卡就算了，为什么整个系统连带一起卡顿呢？这就是你macOS的User First策略吗？我不理解。迫不得已，我只能掏出我的游戏电脑通过局域网测试项目了（悲）。只是没想到RTX3070运行起来也有点大汗淋漓，**看来我写的算法就是一坨狗屎，我的人生也是一坨狗屎啊**。
+
+
+
+
 
 <img src="https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/PicGo_dir/202311171456252.png"/>
