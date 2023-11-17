@@ -131,13 +131,13 @@ bool RayMarch(vec3 ori, vec3 dir, out vec3 hitPos) {
 ![](https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/PicGo_dir/202311162346552.png)
 
 ```glsl
-vec3 EvalSSR(vec3 wi, vec3 wo, vec2 uv) {
-  vec3 worldNormal = GetGBufferNormalWorld(uv);
+vec3 EvalSSR(vec3 wi, vec3 wo, vec2 screenUV) {
+  vec3 worldNormal = GetGBufferNormalWorld(screenUV);
   vec3 relfectDir = normalize(reflect(-wo, worldNormal));
   vec3 hitPos;
   if(RayMarch(vPosWorld.xyz, relfectDir, hitPos)){
-    vec2 screenUV = GetScreenCoordinate(hitPos);
-    return GetGBufferDiffuse(screenUV);
+    vec2 INV_screenUV = GetScreenCoordinate(hitPos);
+    return GetGBufferDiffuse(INV_screenUV);
   }
   else{
     return vec3(0.); 
