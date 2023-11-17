@@ -100,6 +100,7 @@ $$
 最后在 `main()` 中设置结果。
 
 ```glsl
+// ssrFragment.glsl
 void main() {
   float s = InitRand(gl_FragCoord.xy);
   vec3 L = vec3(0.0);
@@ -134,6 +135,7 @@ void main() {
 <img title="" src="https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/PicGo_dir/202311162250903.png" alt="" data-align="center">
 
 ```glsl
+// ssrFragment.glsl
 bool RayMarch(vec3 ori, vec3 dir, out vec3 hitPos) {
   const int totalStepTimes = 150;
   const float threshold = 0.0001;
@@ -162,6 +164,7 @@ bool RayMarch(vec3 ori, vec3 dir, out vec3 hitPos) {
 ![](https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/PicGo_dir/202311162346552.png)
 
 ```glsl
+// ssrFragment.glsl
 vec3 EvalSSR(vec3 wi, vec3 wo, vec2 screenUV) {
   vec3 worldNormal = GetGBufferNormalWorld(screenUV);
   vec3 relfectDir = normalize(reflect(-wo, worldNormal));
@@ -179,6 +182,7 @@ vec3 EvalSSR(vec3 wi, vec3 wo, vec2 screenUV) {
 写一个调用 `RayMarch` 的函数包装起来，方便在 `main()` 中使用。
 
 ```glsl
+// ssrFragment.glsl
 void main() {
   float s = InitRand(gl_FragCoord.xy);
   vec3 L = vec3(0.0);
@@ -215,10 +219,82 @@ void main() {
 
 ## 3. 间接光照
 
-> 照着伪代码写。也就是用蒙特卡洛方法求解渲染方程。在采样的过程中可以使用框架提供的 `SampleHemisphereUniform(inout s, ou pdf)` 和 `SampleHemisphereCos(inout s, out pdf)` ，其中，这两个函数返回局部坐标，传入参数分别是随机数 `s` 和采样概率 `pdf` 。
+> 照着伪代码写。也就是用蒙特卡洛方法求解渲染方程。与之前不同的是，这次的样本都在屏幕空间中。在采样的过程中可以使用框架提供的 `SampleHemisphereUniform(inout s, ou pdf)` 和 `SampleHemisphereCos(inout s, out pdf)` ，其中，这两个函数返回局部坐标，传入参数分别是随机数 `s` 和采样概率 `pdf` 。
 
-写这个部分真是头痛啊，即使 `SAMPLE_NUM` 设置为1，我的电脑都汗流浃背了。Live Server一开，直接打字都有延迟了，受不了。M1pro就这么点性能了吗。而且最让我受不了的是，Safari浏览器卡就算了，为什么整个系统连带一起卡顿呢？这就是你macOS的User First策略吗？我不理解。迫不得已，我只能掏出我的游戏电脑通过局域网测试项目了（悲）。只是没想到RTX3070运行起来也有点大汗淋漓，**看来我写的算法就是一坨狗屎，我的人生也是一坨狗屎啊**。
+这个部分需要理解下图伪代码，然后照着完成 `EvalIndirectionLight()` 就好了。
 
 <img src="https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/PicGo_dir/202311171456252.png"/>
 
-看到上面这个伪代码图，是不是发现非常陌生。这里边的函数跟渲染方程的不太一样，我们之前写的代码是按照渲染方程的传参。
+首先需要知道，我们本次采样仍然是基于屏幕空间的。
+
+间接光照涉及上半球方向的随机采样和对应pdf计算。使用 `InitRand(screenUV)` 得到随机数就可以了，然后二选一， `SampleHemisphereUniform(inout float s, out float pdf)` 或 `SampleHemisphereCos(inout float s, out float pdf)` ，更新随机数同时得到对应 `pdf` 和单位半球上的局部坐标系的位置 `dir` 。
+
+将当前Shading Point的法线坐标传入函数 `LocalBasis(n, out b1, out b2)` ，随后返回 `b1, b2` ，其中 `n, b1, b2` 这三个单位向量两两正交。通过这三个向量所构成的局部坐标系，将 `dir` 转换到世界坐标中。
+
+```glsl
+// ssrFragment.glsl
+#define SAMPLE_NUM 5
+
+vec3 EvalIndirectionLight(vec3 wi, vec3 wo, vec2 screenUV){
+  float s = InitRand(gl_FragCoord.xy);
+  vec3 L_ind = vec3(0.0);
+
+  for(int i = 0; i < SAMPLE_NUM; i++){
+    float pdf;
+    vec3 localDir = SampleHemisphereUniform(s, pdf);
+    vec3 normal = GetGBufferNormalWorld(screenUV);
+    vec3 b1, b2;
+    LocalBasis(normal, b1, b2);
+    vec3 dir = normalize(mat3(b1, b2, normal) * localDir);
+
+    vec3 position_1;
+    if(RayMarch(vPosWorld.xyz, dir, position_1)){
+      vec2 hitScreenUV = GetScreenCoordinate(position_1);
+      L_ind += EvalDiffuse(dir, wo, screenUV) / pdf * EvalDiffuse(wi, dir, hitScreenUV) * EvalDirectionalLight(hitScreenUV);
+    }
+  }
+  L_ind /= float(SAMPLE_NUM);
+  return L_ind;
+}
+```
+
+
+
+```glsl
+// ssrFragment.glsl
+// Main entry point for the shader
+void main() {
+  // float s = InitRand(gl_FragCoord.xy);
+  vec3 wi = normalize(uLightDir);
+  vec3 wo = normalize(uCameraPos - vPosWorld.xyz);
+  vec2 screenUV = GetScreenCoordinate(vPosWorld.xyz);
+
+  // Basic mirror-only SSR coefficient
+  float ssrCoeff = 0.0;
+  // Indirection Light coefficient
+  float IndCorff = 0.3;
+
+  // Direction Light
+  vec3 L_d = EvalDiffuse(wi, wo, screenUV) * EvalDirectionalLight(screenUV);
+  // SSR Light
+  vec3 L_ssr = EvalSSR(wi, wo, screenUV) * ssrCoeff;
+  // Indirection Light
+  vec3 L_i = EvalIndirectionLight(wi, wo, screenUV) * IndCorff;
+
+  vec3 result = L_d + L_ssr + L_i;
+  vec3 color = pow(clamp(result, vec3(0.0), vec3(1.0)), vec3(1.0 / 2.2));
+  gl_FragColor = vec4(vec3(color.rgb), 1.0);
+}
+```
+
+
+
+只显示间接光照。采样数=5。
+
+<img title="" src="https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/PicGo_dir/202311172103642.png" alt="" data-align="center">
+
+直接光照+间接光照。采样数=5。
+
+<img title="" src="https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/PicGo_dir/202311172106475.png" alt="" data-align="center">
+
+> 写这个部分真是头痛啊，即使 `SAMPLE_NUM` 设置为1，我的电脑都汗流浃背了。Live Server一开，直接打字都有延迟了，受不了。M1pro就这么点性能了吗。而且最让我受不了的是，Safari浏览器卡就算了，为什么整个系统连带一起卡顿呢？这就是你macOS的User First策略吗？我不理解。迫不得已，我只能掏出我的游戏电脑通过局域网测试项目了（悲）。只是没想到RTX3070运行起来也有点大汗淋漓，**看来我写的算法就是一坨狗屎，我的人生也是一坨狗屎啊**。
