@@ -225,32 +225,36 @@ void main() {
 
 <img src="https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/PicGo_dir/202311171456252.png"/>
 
-首先需要知道，我们本次采样仍然是基于屏幕空间的。
+首先需要知道，我们本次采样仍然是基于屏幕空间的。因此不在屏幕（gBuffer）中的内容我们就当作不存在。可以理解为只有一层正好面向摄像机的外壳。
 
 间接光照涉及上半球方向的随机采样和对应pdf计算。使用 `InitRand(screenUV)` 得到随机数就可以了，然后二选一， `SampleHemisphereUniform(inout float s, out float pdf)` 或 `SampleHemisphereCos(inout float s, out float pdf)` ，更新随机数同时得到对应 `pdf` 和单位半球上的局部坐标系的位置 `dir` 。
 
 将当前Shading Point的法线坐标传入函数 `LocalBasis(n, out b1, out b2)` ，随后返回 `b1, b2` ，其中 `n, b1, b2` 这三个单位向量两两正交。通过这三个向量所构成的局部坐标系，将 `dir` 转换到世界坐标中。
+
+> By the way, the matrix constructed with the vectors `n` (normal), `b1`, and `b2` is commonly referred to as the TBN matrix in computer graphics.
 
 ```glsl
 // ssrFragment.glsl
 #define SAMPLE_NUM 5
 
 vec3 EvalIndirectionLight(vec3 wi, vec3 wo, vec2 screenUV){
-  float s = InitRand(gl_FragCoord.xy);
   vec3 L_ind = vec3(0.0);
+  float s = InitRand(screenUV);
+  vec3 normal = GetGBufferNormalWorld(screenUV);
+  vec3 b1, b2;
+  LocalBasis(normal, b1, b2);
 
   for(int i = 0; i < SAMPLE_NUM; i++){
     float pdf;
-    vec3 localDir = SampleHemisphereUniform(s, pdf);
-    vec3 normal = GetGBufferNormalWorld(screenUV);
-    vec3 b1, b2;
-    LocalBasis(normal, b1, b2);
-    vec3 dir = normalize(mat3(b1, b2, normal) * localDir);
+    vec3 direction = SampleHemisphereUniform(s, pdf);
+    vec3 worldDir = normalize(mat3(b1, b2, normal) * direction);
 
     vec3 position_1;
-    if(RayMarch(vPosWorld.xyz, dir, position_1)){
+    if(RayMarch(vPosWorld.xyz, worldDir, position_1)){ // 采样光线碰到了 position_1
       vec2 hitScreenUV = GetScreenCoordinate(position_1);
-      L_ind += EvalDiffuse(dir, wo, screenUV) / pdf * EvalDiffuse(wi, dir, hitScreenUV) * EvalDirectionalLight(hitScreenUV);
+      vec3 bsdf_d = EvalDiffuse(worldDir, wo, screenUV); // 直接光照
+      vec3 bsdf_i = EvalDiffuse(wi, worldDir, hitScreenUV); // 间接光照
+      L_ind += bsdf_d / pdf * bsdf_i * EvalDirectionalLight(hitScreenUV);
     }
   }
   L_ind /= float(SAMPLE_NUM);
@@ -264,7 +268,6 @@ vec3 EvalIndirectionLight(vec3 wi, vec3 wo, vec2 screenUV){
 // ssrFragment.glsl
 // Main entry point for the shader
 void main() {
-  // float s = InitRand(gl_FragCoord.xy);
   vec3 wi = normalize(uLightDir);
   vec3 wo = normalize(uCameraPos - vPosWorld.xyz);
   vec2 screenUV = GetScreenCoordinate(vPosWorld.xyz);
@@ -272,7 +275,7 @@ void main() {
   // Basic mirror-only SSR coefficient
   float ssrCoeff = 0.0;
   // Indirection Light coefficient
-  float IndCorff = 0.3;
+  float indCoeff = 0.3;
 
   // Direction Light
   vec3 L_d = EvalDiffuse(wi, wo, screenUV) * EvalDirectionalLight(screenUV);
