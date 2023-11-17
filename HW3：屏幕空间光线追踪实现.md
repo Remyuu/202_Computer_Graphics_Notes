@@ -47,10 +47,10 @@ let settings = {
 };
 
 function createGUI() {
-	...
+    ...
     // Add the boolean switch here
     gui.add(settings, 'Render Switch');
-	...
+    ...
 }
 
 function mainLoop(now) {
@@ -65,24 +65,22 @@ requestAnimationFrame(mainLoop);
 
 <img src="https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/remo_t/image-20231117191114477.png" alt="image-20231117191114477" />
 
-
-
 ## 1. 实现直接光照
 
 > 实现「shaders/ssrShader/ssrFragment.glsl」中的 `EvalDiffuse(vec3 wi, vec3 wo, vec2 uv)` 和 `EvalDirectionalLight(vec2 uv)` 。
 
 ```glsl
 // ssrFragment.glsl
-vec3 EvalDiffuse(vec3 wi, vec3 wo, vec2 uv) {
-  vec3 reflectivity = GetGBufferDiffuse(uv);
-  vec3 normal = GetGBufferNormalWorld(uv);
+vec3 EvalDiffuse(vec3 wi, vec3 wo, vec2 screenUV) {
+  vec3 reflectivity = GetGBufferDiffuse(screenUV);
+  vec3 normal = GetGBufferNormalWorld(screenUV);
   float cosi = max(0., dot(normal, wi));
-  vec3 f_r = reflectivity * cosi * INV_PI;
+  vec3 f_r = reflectivity * cosi;
   return f_r;
 }
 
-vec3 EvalDirectionalLight(vec2 uv) {
-  vec3 Li = uLightRadiance * GetGBufferuShadow(uv);
+vec3 EvalDirectionalLight(vec2 screenUV) {
+  vec3 Li = uLightRadiance * GetGBufferuShadow(screenUV);
   return Li;
 }
 ```
@@ -221,8 +219,6 @@ void main() {
 
 写这个部分真是头痛啊，即使 `SAMPLE_NUM` 设置为1，我的电脑都汗流浃背了。Live Server一开，直接打字都有延迟了，受不了。M1pro就这么点性能了吗。而且最让我受不了的是，Safari浏览器卡就算了，为什么整个系统连带一起卡顿呢？这就是你macOS的User First策略吗？我不理解。迫不得已，我只能掏出我的游戏电脑通过局域网测试项目了（悲）。只是没想到RTX3070运行起来也有点大汗淋漓，**看来我写的算法就是一坨狗屎，我的人生也是一坨狗屎啊**。
 
-
-
-
-
 <img src="https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/PicGo_dir/202311171456252.png"/>
+
+看到上面这个伪代码图，是不是发现非常陌生。这里边的函数跟渲染方程的不太一样，我们之前写的代码是按照渲染方程的传参。
