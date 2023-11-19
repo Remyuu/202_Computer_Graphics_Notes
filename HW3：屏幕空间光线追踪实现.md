@@ -10,6 +10,8 @@
 
 ## 写在前面
 
+这一次作业的基础部分算是目前202所有作业中最简单的了，很快就可以完成。
+
 ### 框架的深度缓冲问题
 
 这一次作业在 macOS 上会遇到比较严重的问题。正方体贴近地面的部分会随着摄像机的距离远近变化表现出异常的裁切锯齿问题。这个现象在 windows 上没有遇到，比较奇怪。
@@ -225,7 +227,7 @@ void main() {
 
 <img src="https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/PicGo_dir/202311171456252.png"/>
 
-首先需要知道，我们本次采样仍然是基于屏幕空间的。因此不在屏幕（gBuffer）中的内容我们就当作不存在。可以理解为只有一层正好面向摄像机的外壳。
+首先需要知道，我们本次采样仍然是基于屏幕空间的。因此不在屏幕（gBuffer）中的内容我们就当作不存在。理解为只有一层正好面向摄像机的外壳。
 
 间接光照涉及上半球方向的随机采样和对应pdf计算。使用 `InitRand(screenUV)` 得到随机数就可以了，然后二选一， `SampleHemisphereUniform(inout float s, out float pdf)` 或 `SampleHemisphereCos(inout float s, out float pdf)` ，更新随机数同时得到对应 `pdf` 和单位半球上的局部坐标系的位置 `dir` 。
 
@@ -262,8 +264,6 @@ vec3 EvalIndirectionLight(vec3 wi, vec3 wo, vec2 screenUV){
 }
 ```
 
-
-
 ```glsl
 // ssrFragment.glsl
 // Main entry point for the shader
@@ -290,8 +290,6 @@ void main() {
 }
 ```
 
-
-
 只显示间接光照。采样数=5。
 
 <img title="" src="https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/PicGo_dir/202311172103642.png" alt="" data-align="center">
@@ -301,3 +299,13 @@ void main() {
 <img title="" src="https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/PicGo_dir/202311172106475.png" alt="" data-align="center">
 
 > 写这个部分真是头痛啊，即使 `SAMPLE_NUM` 设置为1，我的电脑都汗流浃背了。Live Server一开，直接打字都有延迟了，受不了。M1pro就这么点性能了吗。而且最让我受不了的是，Safari浏览器卡就算了，为什么整个系统连带一起卡顿呢？这就是你macOS的User First策略吗？我不理解。迫不得已，我只能掏出我的游戏电脑通过局域网测试项目了（悲）。只是没想到RTX3070运行起来也有点大汗淋漓，**看来我写的算法就是一坨狗屎，我的人生也是一坨狗屎啊**。
+
+## 4. 问题
+
+目前的 `RayMarch()` 其实是有问题的，会出现漏光的现象。
+
+<img src="https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/PicGo_dir/202311181936726.png"/>
+
+并且当前帧率非常低，桌面端3070显卡也只有约20fps。
+
+<img title="" src="https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/PicGo_dir/202311182008852.png" alt="" data-align="center">
