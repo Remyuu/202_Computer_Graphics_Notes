@@ -139,7 +139,7 @@ void main() {
 ```glsl
 // ssrFragment.glsl
 bool RayMarch(vec3 ori, vec3 dir, out vec3 hitPos) {
-  const int totalStepTimes = 150;
+  const int totalStepTimes = 60;
   const float threshold = 0.0001;
   float step = 0.05;
   vec3 stepDir = normalize(dir) * step;
@@ -300,12 +300,110 @@ void main() {
 
 > 写这个部分真是头痛啊，即使 `SAMPLE_NUM` 设置为1，我的电脑都汗流浃背了。Live Server一开，直接打字都有延迟了，受不了。M1pro就这么点性能了吗。而且最让我受不了的是，Safari浏览器卡就算了，为什么整个系统连带一起卡顿呢？这就是你macOS的User First策略吗？我不理解。迫不得已，我只能掏出我的游戏电脑通过局域网测试项目了（悲）。只是没想到RTX3070运行起来也有点大汗淋漓，**看来我写的算法就是一坨狗屎，我的人生也是一坨狗屎啊**。
 
-## 4. 问题
+## 4. RayMarch改进
 
 目前的 `RayMarch()` 其实是有问题的，会出现漏光的现象。
 
-<img src="https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/PicGo_dir/202311181936726.png"/>
+<img title="" src="https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/PicGo_dir/202311181936726.png" alt="" data-align="center">
 
-并且当前帧率非常低，桌面端3070显卡也只有约20fps。
+在采样数为2的情况下只有45帧。我的设备是M1pro 16GB。
 
-<img title="" src="https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/PicGo_dir/202311182008852.png" alt="" data-align="center">
+<img title="" src="https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/PicGo_dir/202311201910160.png" alt="" data-align="center">
+
+这里重点说说为什么会产生漏光的现象，看下面这个图示。我们gBuffer里只有蓝色部分的深度信息，即使我们上面的算法已经判断了当前 `curPos` 已经比gBuffer的深度要深了，这也不能确保这个 `curPos` 是否就是碰撞点。因此上面的算法并没有考虑图中的情况，进而导致漏光的现象。
+
+<img title="" src="https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/PicGo_dir/202311201540548.png" alt="" width="317" data-align="center">
+
+为了**解决漏光问题**，我们引入一个阈值 `thresholds` 解决这个问题（没错，又是一个近似），如果 `curPos` 和当前gBuffer记录的深度的差大于某个阈值，那就进入下图的情况。这个时候屏幕空间的信息没办法正确提供反射的信息，因此这个Shading Point的SSR结果就是 `vec3(0)` 。就是这么的简单粗暴！
+
+<img title="" src="https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/PicGo_dir/202311201829456.png" alt="" width="311" data-align="center">
+
+代码的思路跟前面的差不多，每一次步进时，判断下一步位置的深度与gBuffer的深度的关系，如果下一步的位置在gBuffer的前面（`nextDepth<gDepth`），则可以步进。如果下一步的深度没有gBuffer的深，就判断一下深度相差多少，有没有给定的阈值大。如果比阈值大，那么就直接返回 `false` ，否则，这个时候就可以执行SSR了。先让当前位置步进一个step，返回给 `hitPos` ，然后返回真。
+
+```glsl
+bool RayMarch(vec3 ori, vec3 dir, out vec3 hitPos) {
+  const float EPS = 1e-2;
+  const int totalStepTimes = 60;
+  const float threshold = 0.1;
+  float step = 0.05;
+  vec3 stepDir = normalize(dir) * step;
+  vec3 curPos = ori + stepDir;
+  vec3 nextPos = curPos + stepDir;
+  for(int i = 0; i < totalStepTimes; i++) {
+    if(GetDepth(nextPos) < GetGBufferDepth(GetScreenCoordinate(nextPos))){
+      curPos = nextPos;
+      nextPos += stepDir;
+    }else if(GetGBufferDepth(GetScreenCoordinate(curPos)) - GetDepth(curPos) + EPS > threshold){
+      return false;
+    }else{
+      curPos += stepDir;
+      vec2 screenUV = GetScreenCoordinate(curPos);
+      float rayDepth = GetDepth(curPos);
+      float gBufferDepth = GetGBufferDepth(screenUV);
+      if(rayDepth > gBufferDepth + threshold){
+        hitPos = curPos;
+        return true;
+      }
+    }
+  }
+  return false;
+}
+```
+
+现在帧率也是45左右，性能相差不是特别明显，但是却显著的改善了画面！
+
+<img title="" src="https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/PicGo_dir/202311201838404.png" alt="" data-align="center">
+
+接下来重点优化一下性能，具体而言就是：加入自适应step，和屏幕外忽略的判断。
+
+```glsl
+#define EPS 1e-4
+#define THRESHOLD 0.1
+bool outScreen(vec3 curPos){
+  vec2 uv = GetScreenCoordinate(curPos);
+  return any(bvec4(lessThan(uv, vec2(0.0)), greaterThan(uv, vec2(1.0))));
+}
+bool atFront(vec3 curPos){
+  return GetDepth(curPos) < GetGBufferDepth(GetScreenCoordinate(curPos));
+}
+bool hasInter(vec3 curPos, vec3 dir, out vec3 hitPos){
+  float d1 = GetGBufferDepth(GetScreenCoordinate(curPos)) - GetDepth(curPos) + EPS;
+  float d2 = GetDepth(curPos + dir) - GetGBufferDepth(GetScreenCoordinate(curPos + dir)) + EPS;
+  if(d1 < THRESHOLD && d2 < THRESHOLD){
+    hitPos = curPos + dir * d1 / (d1 + d2);
+    return true;
+  }  
+  return false;
+}
+bool RayMarch(vec3 ori, vec3 dir, out vec3 hitPos) {
+  const int MAX_STEPS = 60;
+  float step = 0.05;
+
+  bool intersect = false, firstinter = false;
+  vec3 curPos = ori;
+  for(int i = 0; i < MAX_STEPS; i++) {
+    if(outScreen(curPos)){
+      break;
+    }else if(atFront(curPos + step * dir)){
+      curPos += step * dir;
+    }else{
+      firstinter = true;
+      if(step < EPS){
+        if(hasInter(curPos, dir * step * 2.0, hitPos)){
+          intersect = true;
+        }
+        break;
+      }
+    }
+    if(firstinter)
+      step *= 0.5;
+  }
+  return intersect;
+}
+```
+
+改进了之后，帧率一下子来到了80帧，几乎翻倍了。
+
+<img src="https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/PicGo_dir/202311201914131.png"/>
+
+此外我们可以稍微优化减少最大步进长度和初始步进大小，帧率可以直接提高到150以上。但是在山洞场景的表现可能就没那么好了。
