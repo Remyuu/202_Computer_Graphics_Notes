@@ -10,7 +10,7 @@
 
 ## 写在前面
 
-这一次作业的基础部分算是目前202所有作业中最简单的了，很快就可以完成。
+这一次作业的基础部分算是目前202所有作业中最简单的了，没有特别复杂的内容。
 
 ### 框架的深度缓冲问题
 
@@ -120,7 +120,7 @@ void main() {
 
 <img title="" src="https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/PicGo_dir/202311161758763.png" alt="" data-align="center">
 
-## 2. 镜面SSR
+## 2. 镜面SSR - 实现RayMarch
 
 > 实现 `RayMarch(ori, dir, out hitPos)` 函数，求出光线与物体的交点，返回光线是否与物体相交。参数 ori 和 dir 为世界坐标系中的值，分别代表光线的起点和方向，其中方向向量为单位向量。
 > 
@@ -231,7 +231,7 @@ void main() {
 
 间接光照涉及上半球方向的随机采样和对应pdf计算。使用 `InitRand(screenUV)` 得到随机数就可以了，然后二选一， `SampleHemisphereUniform(inout float s, out float pdf)` 或 `SampleHemisphereCos(inout float s, out float pdf)` ，更新随机数同时得到对应 `pdf` 和单位半球上的局部坐标系的位置 `dir` 。
 
-将当前Shading Point的法线坐标传入函数 `LocalBasis(n, out b1, out b2)` ，随后返回 `b1, b2` ，其中 `n, b1, b2` 这三个单位向量两两正交。通过这三个向量所构成的局部坐标系，将 `dir` 转换到世界坐标中。
+将当前Shading Point的法线坐标传入函数 `LocalBasis(n, out b1, out b2)` ，随后返回 `b1, b2` ，其中 `n, b1, b2` 这三个单位向量两两正交。通过这三个向量所构成的局部坐标系，将 `dir` 转换到世界坐标中。关于这个 `LocalBasis()` 的原理，我写在最后了。
 
 > By the way, the matrix constructed with the vectors `n` (normal), `b1`, and `b2` is commonly referred to as the TBN matrix in computer graphics.
 
@@ -517,4 +517,67 @@ bool RayMarch(vec3 ori, vec3 dir, out vec3 hitPos) {
 
 <img src="https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/PicGo_dir/202311211713147.png"/>
 
+然而这个算法运用在反射上就会导致新的问题了。尤其是下边这张图，走样非常严重。
+
+<img title="" src="https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/PicGo_dir/202311211748769.png" alt="" data-align="center">
+
+<img title="" src="https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/PicGo_dir/202311211754458.png" alt="" data-align="center">
+
 ## 5. Mipmap实现
+
+[Hierarchical-Z map based occlusion culling](https://www.rastergrid.com/blog/2010/10/hierarchical-z-map-based-occlusion-culling/)
+
+## 6. LocalBasis构建TBN原理
+
+一般来说，构建法切副（法线、切线、副切线向量）是通过叉积来实现，实现方法非常简单，先任选一个跟法线向量不平行的辅助向量，两者做一次叉积得到第一个切线向量，然后这个切线向量和法线向量又做一次叉积，得到副切线向量。具体代码是这样写：
+
+```cpp
+void CalculateTBN(const vec3 &normal, vec3 &tangent, vec3 &bitangent) {
+    vec3 helperVec;
+    if (abs(normal.x) < abs(normal.y))
+        helperVec = vec3(1.0, 0.0, 0.0);
+    else
+        helperVec = vec3(0.0, 1.0, 0.0);
+    tangent = normalize(cross(helperVec, normal));
+    bitangent = normalize(cross(normal, tangent));
+}
+```
+
+但是作业框架中的代码避免了使用**叉积**，非常巧妙。简单的说，就是确保向量间的**点积**都是0。
+
+- $b1⋅n=0$
+
+- $b2⋅n=0$
+
+- $b1⋅b2=0$
+
+```glsl
+void LocalBasis(vec3 n, out vec3 b1, out vec3 b2) {
+  float sign_ = sign(n.z);
+  if (n.z == 0.0) {
+    sign_ = 1.0;
+  }
+  float a = -1.0 / (sign_ + n.z);
+  float b = n.x * n.y * a;
+  b1 = vec3(1.0 + sign_ * n.x * n.x * a, sign_ * b, -sign_ * n.x);
+  b2 = vec3(b, sign_ + n.y * n.y * a, -n.y);
+}
+```
+
+这个算法是一个比较启发式的，引入了一个符号函数，相当有逼格。还考虑了除0的情况，格局也是拉满。但是下面这四行，应该是作者不知道在哪一天写公式的时候随便乱拆给他拆出来的而已，这里我还原一下当时作者的拆解步骤。也就是倒推的过程。
+
+<img title="" src="https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/PicGo_dir/202311212255583.png" alt="" data-align="center">
+
+另外说一下，代码中的符号函数可以在最后一步乘上。
+
+实际上，这样的公式我可以造出一百个，我也不知道这些个公式之间有啥区别，知道的小伙伴请告诉我QAQ。如果硬要说，那么就可以这样解释：
+
+> 传统的基于叉乘的方法可能会产生数值不稳定，因为叉乘结果在这种情况下接近于零向量。
+> 
+> 本文采用的方法是一种启发式方法，它通过一系列精心设计的步骤来构造正交基。这种方法特别注意了数值稳定性，使其在处理接近极端方向的法线向量时仍然有效和稳定。
+
+## References
+
+1. Games 202
+2. [LearnOpenGL - Normal Mapping](https://learnopengl.com/Advanced-Lighting/Normal-Mapping)
+3. 
