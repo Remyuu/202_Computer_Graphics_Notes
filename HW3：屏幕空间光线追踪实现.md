@@ -412,8 +412,6 @@ bool RayMarch(vec3 ori, vec3 dir, out vec3 hitPos) {
 
 <img title="" src="https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/PicGo_dir/202311202332914.png" alt="" data-align="center">
 
-
-
 接下来重点优化一下性能，具体而言就是：
 
 - 加入自适应step
@@ -472,7 +470,7 @@ bool RayMarch(vec3 ori, vec3 dir, out vec3 hitPos) {
 最后整理一下代码。
 
 ```glsl
-#define EPS 1e-2
+#define EPS 5e-2
 #define TOTAL_STEP_TIMES 20
 #define THRESHOLD 0.1
 #define INIT_STEP 0.8
@@ -492,6 +490,7 @@ bool RayMarch(vec3 ori, vec3 dir, out vec3 hitPos) {
     if(outScreen(curPos)) break;
     if(testDepth(nextPos)){ // 可以进步
       curPos += dir * step;
+      continue;
     }else{ // 过于进步了
       firstIn = true;
       if(step < EPS){
@@ -503,9 +502,19 @@ bool RayMarch(vec3 ori, vec3 dir, out vec3 hitPos) {
         }
         break;
       }
+      if(firstIn) step *= 0.5;
     }
-    if(firstIn) step *= 0.5;
   }
   return result;
 }
 ```
+
+切换到洞穴场景，采样率设置为32，帧率就只有可怜的4帧了。
+
+<img src="https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/PicGo_dir/202311211711383.png"/>
+
+而且不过次级光源质量非常不错了。
+
+<img src="https://regz-1258735137.cos.ap-guangzhou.myqcloud.com/PicGo_dir/202311211713147.png"/>
+
+## 5. Mipmap实现
