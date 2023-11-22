@@ -6,11 +6,13 @@
 
 - 实现对场景间接光照的着色。
 
-- Bonus 1：实现 Mipmap 优化的 Screen Space Ray Tracing。
+- 实现动态步长的RayMarch。
+
+-  **（还没写）** Bonus 1：实现 Mipmap 优化的 Screen Space Ray Tracing。
 
 ## 写在前面
 
-这一次作业的基础部分算是目前202所有作业中最简单的了，没有特别复杂的内容。
+这一次作业的基础部分算是目前202所有作业中最简单的了，没有特别复杂的内容。但是Bonus部分不知如何下手，大佬们带带。
 
 ### 框架的深度缓冲问题
 
@@ -525,7 +527,11 @@ bool RayMarch(vec3 ori, vec3 dir, out vec3 hitPos) {
 
 ## 5. Mipmap实现
 
+
+
 [Hierarchical-Z map based occlusion culling](https://www.rastergrid.com/blog/2010/10/hierarchical-z-map-based-occlusion-culling/)
+
+
 
 ## 6. LocalBasis构建TBN原理
 
@@ -580,4 +586,3 @@ void LocalBasis(vec3 n, out vec3 b1, out vec3 b2) {
 
 1. Games 202
 2. [LearnOpenGL - Normal Mapping](https://learnopengl.com/Advanced-Lighting/Normal-Mapping)
-3. 
