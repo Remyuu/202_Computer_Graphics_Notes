@@ -73,7 +73,7 @@ requestAnimationFrame(mainLoop);
 
 > 实现「shaders/ssrShader/ssrFragment.glsl」中的 `EvalDiffuse(vec3 wi, vec3 wo, vec2 uv)` 和 `EvalDirectionalLight(vec2 uv)` 。
 
-```glsl
+```Glsl
 // ssrFragment.glsl
 vec3 EvalDiffuse(vec3 wi, vec3 wo, vec2 screenUV) {
   vec3 reflectivity = GetGBufferDiffuse(screenUV);
