@@ -54,7 +54,7 @@ Eigen::Array3f Le(images[i][index + 0], images[i][index + 1],
 
 接着将各个球面坐标传入 `sh::EvalSH()` 分别计算每个球谐函数（基函数）的实值 `sh` 。同时计算每个 cubemap 中每个像素所占据球面区域的比重 `delta` 。
 
-最后累加球谐系数，代码中我们可以对 cubemap 伤的所有像素累加，近似是原始计算球谐函数的积分的操作。
+最后累加球谐系数，代码中我们可以对 cubemap 上的所有像素累加，近似是原始计算球谐函数的积分的操作。
 
 $$
 Y_{lm} = \int_{\phi=0}^{2\pi} \int_{\theta=0}^{\pi} f(\theta, \phi) Y_l^m (\theta, \phi) \sin(\theta) d\theta d\phi\\
